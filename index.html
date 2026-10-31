@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DUO暗記">
+<meta name="theme-color" content="#1d3557">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>DUO暗記</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --text: #1b1f24; --sub: #6b7280; --line: #e3e5e8;
+  --accent: #1d4ed8; --accent-text: #ffffff; --good: #15803d; --weak: #c2410c; --mark: #fde68a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115; --card: #1a1d23; --text: #e8eaed; --sub: #9aa0a6; --line: #2c3038;
+    --accent: #5b8def; --accent-text: #0f1115; --good: #4ade80; --weak: #fb923c; --mark: #713f12;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  min-height: 100vh; min-height: 100dvh;
+}
+header {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: 17px; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+main { padding: 16px; max-width: 640px; margin: 0 auto; }
+button {
+  font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 10px; padding: 10px 14px; cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.icon { padding: 6px 10px; }
+button:disabled { opacity: .4; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+.seg button { flex: 1; border: 0; border-radius: 0; padding: 9px 4px; font-size: 14px; }
+.seg button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.row {
+  display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px 14px; text-align: left; width: 100%;
+}
+.row .t { font-weight: 600; min-width: 82px; }
+.row .s { flex: 1; color: var(--sub); font-size: 13px; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; background: var(--good); }
+.weakc { color: var(--weak); font-size: 13px; font-weight: 600; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 18px;
+  min-height: 260px; display: flex; flex-direction: column; gap: 14px;
+}
+.meta { color: var(--sub); font-size: 13px; display: flex; justify-content: space-between; }
+.prompt { font-size: 19px; line-height: 1.6; }
+.answer { font-size: 18px; line-height: 1.6; border-top: 1px dashed var(--line); padding-top: 14px; }
+.answer.hidden { display: none; }
+.en { font-family: -apple-system, "Helvetica Neue", sans-serif; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
+.blank { border-bottom: 2px solid var(--accent); padding: 0 3px; letter-spacing: 1px; color: var(--accent); }
+.words { font-size: 14px; color: var(--sub); line-height: 1.8; }
+.words b { color: var(--text); }
+.tapzone { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--sub); font-size: 14px; border-radius: 12px; border: 1px dashed var(--line); min-height: 64px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.actions button { padding: 14px; font-weight: 600; }
+.actions .weak { color: var(--weak); }
+.actions .good { color: var(--good); }
+.nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.nav button { flex: 1; }
+.flag { color: var(--weak); font-weight: 600; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.tools button { flex: 1; font-size: 14px; }
+.empty { text-align: center; color: var(--sub); line-height: 1.8; padding: 32px 8px; }
+textarea { width: 100%; min-height: 180px; font: 14px ui-monospace, Menlo, monospace; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+label.field { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+select, input[type=range] { font: inherit; max-width: 60%; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+p.note { color: var(--sub); font-size: 13px; line-height: 1.7; }
+code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius: 4px; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 20; }
+</style>
+</head>
+<body>
+<header>
+  <button class="icon" id="back" hidden aria-label="戻る">‹ 戻る</button>
+  <h1 id="title">DUO暗記</h1>
+  <button class="icon" id="settingsBtn" aria-label="設定">設定</button>
+</header>
+<main id="app"></main>
+
+<script>
+'use strict';
+
+// ---------- 保存 ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('保存できませんでした'); } }
+};
+let items = store.get('duo.items', []);
+let prog = store.get('duo.progress', { weak: {}, seen: {}, pos: {} });
+let settings = Object.assign({ rate: 0.9, autoSpeak: true, voice: '', listenJa: true, listenRepeat: 1 }, store.get('duo.settings', {}));
+let mode = store.get('duo.mode', 'sentence');
+const saveProg = () => store.set('duo.progress', prog);
+const saveSettings = () => store.set('duo.settings', settings);
+
+const MODES = { sentence: '和訳→英文', word: '単語カード', cloze: '穴埋め', listen: '通し聞き' };
+
+// ---------- データ ----------
+// CSV/TSV: section, no, english([]で見出し語), japanese, 見出し語の意味(;区切り)
+function parseTable(text) {
+  const delim = text.includes('\t') ? '\t' : ',';
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { f += '"'; i++; }
+      else if (c === '"') q = false;
+      else f += c;
+    } else if (c === '"' && f === '') q = true;
+    else if (c === delim) { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(f); rows.push(row); row = []; f = '';
+    } else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ''));
+}
+
+function toItems(rows) {
+  const out = [];
+  for (const r of rows) {
+    const [sec, no, en, ja, means = ''] = r.map(x => (x || '').trim());
+    if (!en || !ja || isNaN(parseInt(sec, 10))) continue; // ヘッダ行などは飛ばす
+    const heads = [...en.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]);
+    const ms = means ? means.split(/[;；]/).map(s => s.trim()) : [];
+    out.push({
+      id: `${parseInt(sec, 10)}-${no || out.length + 1}`,
+      section: parseInt(sec, 10), no: no || String(out.length + 1), en, ja,
+      words: heads.map((w, i) => ({ w, m: ms[i] || '' }))
+    });
+  }
+  return out;
+}
+
+const plain = en => en.replace(/\[([^\]]+)\]/g, '$1');
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const marked = en => esc(en).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>');
+const blanked = en => esc(en).replace(/\[([^\]]+)\]/g, (_, w) =>
+  `<span class="blank">${w.split(' ').map(p => p[0] + '_'.repeat(Math.max(p.length - 1, 1))).join(' ')}</span>`);
+
+const sections = () => [...new Set(items.map(i => i.section))].sort((a, b) => a - b);
+
+// 学習モードごとの出題単位
+function cardsFor(sec, m) {
+  const its = sec === 'weak' ? items : items.filter(i => i.section === sec);
+  let cards;
+  if (m === 'word') cards = its.flatMap(it => it.words.map((w, k) => ({ key: `w:${it.id}:${k}`, it, w })));
+  else if (m === 'cloze') cards = its.filter(it => it.words.length).map(it => ({ key: `c:${it.id}`, it }));
+  else cards = its.map(it => ({ key: `s:${it.id}`, it }));
+  return sec === 'weak' ? cards.filter(c => prog.weak[c.key]) : cards;
+}
+
+// ---------- 音声 ----------
+const synth = window.speechSynthesis;
+let voices = [];
+function loadVoices() { voices = synth ? synth.getVoices() : []; }
+if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+function speak(text, lang = 'en', onend) {
+  if (!synth) { onend && onend(); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  if (lang === 'en') {
+    u.lang = 'en-US'; u.rate = settings.rate;
+    const v = voices.find(v => v.voiceURI === settings.voice);
+    if (v) u.voice = v;
+  } else { u.lang = 'ja-JP'; u.rate = 1; }
+  if (onend) { u.onend = onend; u.onerror = onend; }
+  synth.speak(u);
+}
+const stopSpeak = () => { listenRun = null; synth && synth.cancel(); };
+
+// ---------- 画面 ----------
+const app = document.getElementById('app');
+const titleEl = document.getElementById('title');
+const backBtn = document.getElementById('back');
+let backTo = null;
+function setHeader(title, back) {
+  titleEl.textContent = title; backTo = back; backBtn.hidden = !back;
+}
+backBtn.onclick = () => { stopSpeak(); backTo && backTo(); };
+document.getElementById('settingsBtn').onclick = () => { stopSpeak(); showSettings(); };
+
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
+}
+
+function showHome() {
+  setHeader('DUO暗記', null);
+  if (!items.length) {
+    app.innerHTML = `<div class="empty">まだ例文がありません。<br>右上の「設定」から CSV を取り込んでください。<br><br>
+      <button class="primary" id="go">データを取り込む</button></div>`;
+    document.getElementById('go').onclick = showSettings;
+    return;
+  }
+  const weakN = cardsFor('weak', mode === 'listen' ? 'sentence' : mode).length;
+  app.innerHTML = `
+    <div class="seg">${Object.entries(MODES).map(([k, v]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="tools">
+      <button id="weakBtn" ${mode === 'listen' || !weakN ? 'disabled' : ''}>苦手だけ復習 (${weakN})</button>
+    </div>
+    <div class="list">${sections().map(sec => {
+      const m = mode === 'listen' ? 'sentence' : mode;
+      const cs = cardsFor(sec, m);
+      const seen = cs.filter(c => prog.seen[c.key]).length;
+      const weak = cs.filter(c => prog.weak[c.key]).length;
+      const pct = cs.length ? Math.round(seen / cs.length * 100) : 0;
+      return `<button class="row" data-s="${sec}">
+        <span class="t">Section ${sec}</span>
+        <span class="s">${cs.length}問 · ${pct}%<span class="bar"><i style="width:${pct}%"></i></span></span>
+        ${weak ? `<span class="weakc">苦手 ${weak}</span>` : ''}
+      </button>`;
+    }).join('')}</div>`;
+  app.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mode = b.dataset.m; store.set('duo.mode', mode); showHome(); });
+  app.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+    const sec = parseInt(b.dataset.s, 10);
+    mode === 'listen' ? showListen(sec) : startStudy(sec, mode);
+  });
+  document.getElementById('weakBtn').onclick = () => startStudy('weak', mode);
+}
+
+// ---------- 学習 ----------
+function startStudy(sec, m) {
+  const cards = cardsFor(sec, m);
+  if (!cards.length) { toast('出題できる問題がありません'); return; }
+  const posKey = `${m}:${sec}`;
+  let i = sec === 'weak' ? 0 : Math.min(prog.pos[posKey] || 0, cards.length - 1);
+  let revealed = false;
+
+  function render() {
+    const c = cards[i], it = c.it;
+    revealed = false;
+    const head = sec === 'weak' ? `苦手 · ${MODES[m]}` : `Section ${sec} · ${MODES[m]}`;
+    setHeader(head, showHome);
+    let prompt, answer;
+    if (m === 'sentence') {
+      prompt = `<div class="prompt">${esc(it.ja)}</div>`;
+      answer = `<div class="en">${marked(it.en)}</div>${wordList(it)}`;
+    } else if (m === 'cloze') {
+      prompt = `<div class="prompt en">${blanked(it.en)}</div><div class="words">${esc(it.ja)}</div>`;
+      answer = `<div class="en">${marked(it.en)}</div>${wordList(it)}`;
+    } else {
+      prompt = `<div class="prompt en" style="font-size:28px;font-weight:700;text-align:center">${esc(c.w.w)}</div>`;
+      answer = `<div style="font-size:22px;font-weight:600;text-align:center">${esc(c.w.m || '（意味未登録）')}</div>
+        <div class="words en">${marked(it.en)}</div><div class="words">${esc(it.ja)}</div>`;
+    }
+    app.innerHTML = `
+      <div class="card" id="card">
+        <div class="meta"><span>No.${esc(it.no)} · ${i + 1} / ${cards.length}</span>
+          <span>${prog.weak[c.key] ? '<span class="flag">● 苦手</span>' : ''}</span></div>
+        ${prompt}
+        <div class="tapzone" id="tap">タップで答えを表示</div>
+        <div class="answer hidden" id="ans">${answer}</div>
+      </div>
+      <div class="actions">
+        <button class="weak" id="ng">苦手</button>
+        <button class="good" id="ok">覚えた</button>
+      </div>
+      <div class="nav">
+        <button id="prev" ${i === 0 ? 'disabled' : ''}>‹ 前へ</button>
+        <button id="say">🔊 英文</button>
+        <button id="next">次へ ›</button>
+      </div>`;
+    document.getElementById('card').onclick = reveal;
+    document.getElementById('say').onclick = () => { synth && synth.cancel(); speak(plain(m === 'word' && !revealed ? c.w.w : it.en)); };
+    document.getElementById('prev').onclick = () => go(-1);
+    document.getElementById('next').onclick = () => go(1);
+    document.getElementById('ok').onclick = () => { delete prog.weak[c.key]; mark(c); go(1); };
+    document.getElementById('ng').onclick = () => { prog.weak[c.key] = true; mark(c); go(1); };
+    if (m === 'word' && settings.autoSpeak) speak(c.w.w);
+  }
+  function reveal() {
+    if (revealed) return;
+    revealed = true;
+    document.getElementById('tap').style.display = 'none';
+    document.getElementById('ans').classList.remove('hidden');
+    if (settings.autoSpeak) { synth && synth.cancel(); speak(plain(cards[i].it.en)); }
+  }
+  function mark(c) { prog.seen[c.key] = true; saveProg(); }
+  function go(d) {
+    stopSpeak();
+    const n = i + d;
+    if (n >= cards.length) {
+      if (sec !== 'weak') { prog.pos[posKey] = 0; saveProg(); }
+      finish(); return;
+    }
+    i = Math.max(0, n);
+    if (sec !== 'weak') { prog.pos[posKey] = i; saveProg(); }
+    render(); window.scrollTo(0, 0);
+  }
+  function finish() {
+    const weak = cards.filter(c => prog.weak[c.key]).length;
+    const secs = sections();
+    const nextSec = sec === 'weak' ? null : secs[secs.indexOf(sec) + 1];
+    app.innerHTML = `<div class="empty">
+      <div style="font-size:20px;font-weight:700;color:var(--text)">おつかれさまでした</div>
+      ${cards.length}問のうち 苦手 ${weak}問<br><br>
+      <div class="list">
+        ${weak ? `<button class="row" id="again" style="justify-content:center">苦手だけもう一度</button>` : ''}
+        ${nextSec ? `<button class="primary" id="nextSec">Section ${nextSec} へ</button>` : ''}
+        <button id="home">一覧に戻る</button>
+      </div></div>`;
+    const again = document.getElementById('again');
+    if (again) again.onclick = () => {
+      const left = cards.filter(c => prog.weak[c.key]);
+      cards.length = 0; cards.push(...left); i = 0; render();
+    };
+    const ns = document.getElementById('nextSec');
+    if (ns) ns.onclick = () => startStudy(nextSec, m);
+    document.getElementById('home').onclick = showHome;
+  }
+  render();
+}
+
+function wordList(it) {
+  if (!it.words.length) return '';
+  return `<div class="words">${it.words.map(w => `<b class="en">${esc(w.w)}</b> ${esc(w.m)}`).join('<br>')}</div>`;
+}
+
+// ---------- 通し聞き ----------
+let listenRun = null;
+function showListen(sec) {
+  const its = items.filter(i => i.section === sec);
+  setHeader(`Section ${sec} · 通し聞き`, showHome);
+  app.innerHTML = `
+    <div class="card"><div class="meta"><span id="lpos">${its.length}文</span></div>
+      <div class="prompt" id="lja">再生ボタンを押すと、${settings.listenJa ? '和訳→' : ''}英文の順に読み上げます。</div>
+      <div class="answer en" id="len"></div></div>
+    <div class="nav"><button class="primary" id="play">▶ 再生</button><button id="stop">■ 停止</button></div>
+    <p class="note">日本語の読み上げ・英文の繰り返し回数は設定で変えられます。</p>`;
+  document.getElementById('stop').onclick = stopSpeak;
+  document.getElementById('play').onclick = () => {
+    stopSpeak();
+    const run = listenRun = {};
+    let k = 0;
+    const step = () => {
+      if (listenRun !== run || k >= its.length) { if (listenRun === run) listenRun = null; return; }
+      const it = its[k];
+      document.getElementById('lpos').textContent = `No.${it.no} · ${k + 1} / ${its.length}`;
+      document.getElementById('lja').textContent = it.ja;
+      document.getElementById('len').innerHTML = marked(it.en);
+      let rep = settings.listenRepeat;
+      const en = () => listenRun === run && speak(plain(it.en), 'en', () => {
+        if (--rep > 0) setTimeout(en, 500); else { k++; setTimeout(step, 900); }
+      });
+      settings.listenJa ? speak(it.ja, 'ja', () => setTimeout(en, 300)) : en();
+    };
+    step();
+  };
+}
+
+// ---------- 設定 ----------
+function showSettings() {
+  setHeader('設定', showHome);
+  const en = voices.filter(v => v.lang && v.lang.startsWith('en'));
+  app.innerHTML = `
+    <h2>読み上げ</h2>
+    <label class="field">英文の速さ <input type="range" id="rate" min="0.5" max="1.3" step="0.05" value="${settings.rate}"></label>
+    <label class="field">答えを出したら自動で読む <input type="checkbox" id="auto" ${settings.autoSpeak ? 'checked' : ''}></label>
+    <label class="field">声 <select id="voice"><option value="">標準</option>${en.map(v =>
+      `<option value="${esc(v.voiceURI)}" ${v.voiceURI === settings.voice ? 'selected' : ''}>${esc(v.name)} (${v.lang})</option>`).join('')}</select></label>
+    <label class="field">通し聞きで和訳も読む <input type="checkbox" id="lja" ${settings.listenJa ? 'checked' : ''}></label>
+    <label class="field">通し聞きの英文回数 <select id="lrep">${[1, 2, 3].map(n => `<option ${n === settings.listenRepeat ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <div class="nav"><button id="test">🔊 試しに読む</button></div>
+
+    <h2>データの取り込み</h2>
+    <p class="note">1行に1例文。列は <code>セクション, 番号, 英文, 和訳, 見出し語の意味</code> の順です。
+      英文の見出し語は <code>[ ]</code> で囲み、意味は同じ順に <code>;</code> で区切ります。
+      Numbers や Excel からコピーしたタブ区切りもそのまま貼れます。</p>
+    <p class="note">例: <code>1,1,We must [respect] the [privacy] of others.,他人のプライバシーは尊重しなければならない。,尊重する;私生活</code></p>
+    <textarea id="csv" placeholder="ここに貼り付け"></textarea>
+    <div class="tools" style="margin-top:8px">
+      <button id="file">ファイルを選ぶ</button>
+      <button class="primary" id="imp">取り込む（置き換え）</button>
+    </div>
+    <input type="file" id="fileIn" accept=".csv,.tsv,.txt,text/*" hidden>
+    <p class="note">現在 ${items.length} 文 / ${sections().length} セクション</p>
+
+    <h2>進み具合</h2>
+    <div class="tools">
+      <button id="exp">バックアップを書き出す</button>
+      <button id="resetP">進み具合をリセット</button>
+    </div>
+    <p class="note">データと進み具合はこの iPhone の Safari 内だけに保存されます。機種変更前はバックアップを書き出してください。
+      書き出したファイルは上の欄に貼れば元に戻せます。</p>`;
+  const $ = id => document.getElementById(id);
+  $('rate').oninput = e => { settings.rate = +e.target.value; saveSettings(); };
+  $('auto').onchange = e => { settings.autoSpeak = e.target.checked; saveSettings(); };
+  $('voice').onchange = e => { settings.voice = e.target.value; saveSettings(); };
+  $('lja').onchange = e => { settings.listenJa = e.target.checked; saveSettings(); };
+  $('lrep').onchange = e => { settings.listenRepeat = +e.target.value; saveSettings(); };
+  $('test').onclick = () => { stopSpeak(); speak('Practice makes perfect.'); };
+  $('file').onclick = () => $('fileIn').click();
+  $('fileIn').onchange = async e => { const f = e.target.files[0]; if (f) $('csv').value = await f.text(); };
+  $('imp').onclick = () => importText($('csv').value);
+  $('exp').onclick = exportBackup;
+  $('resetP').onclick = () => {
+    if (!confirm('苦手の印と進み具合をすべて消します。よろしいですか？')) return;
+    prog = { weak: {}, seen: {}, pos: {} }; saveProg(); toast('リセットしました');
+  };
+}
+
+function importText(text) {
+  text = text.trim();
+  if (!text) { toast('データが空です'); return; }
+  if (text.startsWith('{')) { // バックアップの復元
+    try {
+      const b = JSON.parse(text);
+      if (!Array.isArray(b.items)) throw 0;
+      items = b.items; prog = b.progress || prog;
+      store.set('duo.items', items); saveProg();
+      toast(`${items.length} 文を復元しました`); showHome();
+    } catch (e) { toast('バックアップの形式が正しくありません'); }
+    return;
+  }
+  const next = toItems(parseTable(text));
+  if (!next.length) { toast('読み取れる行がありませんでした'); return; }
+  if (items.length && !confirm(`今のデータ ${items.length} 文を ${next.length} 文に置き換えます。進み具合は同じ番号の文に引き継がれます。`)) return;
+  items = next; store.set('duo.items', items);
+  toast(`${items.length} 文を取り込みました`); showHome();
+}
+
+async function exportBackup() {
+  const name = `duo-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const file = new File([JSON.stringify({ items, progress: prog })], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); } catch (e) {}
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+showHome();
+</script>
+</body>
+</html>
