@@ -139,18 +139,27 @@ function toItems(rows) {
   for (const r of rows) {
     const [sec, no, en, ja, means = ''] = r.map(x => (x || '').trim());
     if (!en || !ja || isNaN(parseInt(sec, 10))) continue; // ヘッダ行などは飛ばす
-    const heads = [...en.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]);
-    const ms = means ? means.split(/[;；]/).map(s => s.trim()) : [];
+    let words;
+    if (means.includes('=')) { // 見出し語=意味|見出し語=意味 （[ ] とは独立）
+      words = means.split('|').filter(Boolean).map(x => {
+        const k = x.indexOf('=');
+        return { w: x.slice(0, k).trim(), m: x.slice(k + 1).trim() };
+      });
+    } else { // [ ] の順に ; 区切りの意味を対応させる
+      const ms = means ? means.split(/[;；]/).map(s => s.trim()) : [];
+      words = [...en.matchAll(/\[([^\]]+)\]/g)].map((m, i) => ({ w: m[1], m: ms[i] || '' }));
+    }
     out.push({
       id: `${parseInt(sec, 10)}-${no || out.length + 1}`,
-      section: parseInt(sec, 10), no: no || String(out.length + 1), en, ja,
-      words: heads.map((w, i) => ({ w, m: ms[i] || '' }))
+      section: parseInt(sec, 10), no: no || String(out.length + 1), en, ja, words
     });
   }
   return out;
 }
 
 const plain = en => en.replace(/\[([^\]]+)\]/g, '$1');
+// 見出し語の読み上げ用: "assure A (that) ~" の記号や "fair 1" の番号を除く
+const spoken = w => w.replace(/\.\.\.|…|~|[()]/g, ' ').replace(/\s\d+$/, '').trim();
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const marked = en => esc(en).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>');
 const blanked = en => esc(en).replace(/\[([^\]]+)\]/g, (_, w) =>
@@ -163,7 +172,7 @@ function cardsFor(sec, m) {
   const its = sec === 'weak' ? items : items.filter(i => i.section === sec);
   let cards;
   if (m === 'word') cards = its.flatMap(it => it.words.map((w, k) => ({ key: `w:${it.id}:${k}`, it, w })));
-  else if (m === 'cloze') cards = its.filter(it => it.words.length).map(it => ({ key: `c:${it.id}`, it }));
+  else if (m === 'cloze') cards = its.filter(it => it.en.includes('[')).map(it => ({ key: `c:${it.id}`, it }));
   else cards = its.map(it => ({ key: `s:${it.id}`, it }));
   return sec === 'weak' ? cards.filter(c => prog.weak[c.key]) : cards;
 }
@@ -279,12 +288,12 @@ function startStudy(sec, m) {
         <button id="next">次へ ›</button>
       </div>`;
     document.getElementById('card').onclick = reveal;
-    document.getElementById('say').onclick = () => { synth && synth.cancel(); speak(plain(m === 'word' && !revealed ? c.w.w : it.en)); };
+    document.getElementById('say').onclick = () => { synth && synth.cancel(); speak(m === 'word' && !revealed ? spoken(c.w.w) : plain(it.en)); };
     document.getElementById('prev').onclick = () => go(-1);
     document.getElementById('next').onclick = () => go(1);
     document.getElementById('ok').onclick = () => { delete prog.weak[c.key]; mark(c); go(1); };
     document.getElementById('ng').onclick = () => { prog.weak[c.key] = true; mark(c); go(1); };
-    if (m === 'word' && settings.autoSpeak) speak(c.w.w);
+    if (m === 'word' && settings.autoSpeak) speak(spoken(c.w.w));
   }
   function reveal() {
     if (revealed) return;
@@ -383,7 +392,8 @@ function showSettings() {
     <h2>データの取り込み</h2>
     <p class="note">1行に1例文。列は <code>セクション, 番号, 英文, 和訳, 見出し語の意味</code> の順です。
       英文の見出し語は <code>[ ]</code> で囲み、意味は同じ順に <code>;</code> で区切ります。
-      Numbers や Excel からコピーしたタブ区切りもそのまま貼れます。</p>
+      Numbers や Excel からコピーしたタブ区切りもそのまま貼れます。
+      見出し語の列を <code>見出し語=意味|見出し語=意味</code> の形にすると、[ ] と別に単語カードを作れます。</p>
     <p class="note">例: <code>1,1,We must [respect] the [privacy] of others.,他人のプライバシーは尊重しなければならない。,尊重する;私生活</code></p>
     <textarea id="csv" placeholder="ここに貼り付け"></textarea>
     <div class="tools" style="margin-top:8px">
