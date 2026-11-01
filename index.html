@@ -84,6 +84,15 @@ select, input[type=range] { font: inherit; max-width: 60%; }
 h2 { font-size: 15px; margin: 24px 0 8px; }
 p.note { color: var(--sub); font-size: 13px; line-height: 1.7; }
 code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius: 4px; }
+.typing { display: flex; flex-direction: column; gap: 10px; }
+.typing textarea { min-height: 84px; font: 17px -apple-system, "Helvetica Neue", sans-serif; line-height: 1.5; }
+.typing .nav { margin-top: 0; }
+.fill { line-height: 2.2; }
+.fill input { font: inherit; border: 0; border-bottom: 2px solid var(--accent); background: transparent; color: var(--text); padding: 0 2px; outline: none; border-radius: 0; }
+.fill input.miss { border-bottom-color: var(--weak); }
+.msg { font-size: 14px; color: var(--weak); }
+.msg:empty { display: none; }
+.excellent { font-size: 30px; font-weight: 800; color: var(--good); text-align: center; padding: 12px 0; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 20; }
 </style>
 </head>
@@ -164,6 +173,24 @@ const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&
 const marked = en => esc(en).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>');
 const blanked = en => esc(en).replace(/\[([^\]]+)\]/g, (_, w) =>
   `<span class="blank">${w.split(' ').map(p => p[0] + '_'.repeat(Math.max(p.length - 1, 1))).join(' ')}</span>`);
+
+// 入力の採点用: 大文字小文字・記号・アクセントの違いは見ない
+const norm = w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/[’‘]/g, "'").replace(/[^a-z0-9']/g, '');
+// 正解の語 a と入力の語 b の最長共通部分列を取り、合っていた a の位置を返す
+function matched(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let x = a.length - 1; x >= 0; x--)
+    for (let y = b.length - 1; y >= 0; y--)
+      dp[x][y] = a[x] === b[y] ? dp[x + 1][y + 1] + 1 : Math.max(dp[x + 1][y], dp[x][y + 1]);
+  const hit = new Set();
+  for (let x = 0, y = 0; x < a.length && y < b.length;) {
+    if (a[x] === b[y]) { hit.add(x); x++; y++; }
+    else if (dp[x + 1][y] >= dp[x][y + 1]) x++;
+    else y++;
+  }
+  return hit;
+}
 
 const sections = () => [...new Set(items.map(i => i.section))].sort((a, b) => a - b);
 
@@ -275,7 +302,12 @@ function startStudy(sec, m) {
         <div class="meta"><span>No.${esc(it.no)} · ${i + 1} / ${cards.length}</span>
           <span>${prog.weak[c.key] ? '<span class="flag">● 苦手</span>' : ''}</span></div>
         ${prompt}
-        <div class="tapzone" id="tap">タップで答えを表示</div>
+        ${m === 'sentence' ? `<div class="typing" id="tap">
+          <div class="prompt en fill" id="fill" hidden></div>
+          <textarea id="typed" class="en" placeholder="英文を入力" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+          <div class="msg" id="msg"></div>
+          <div class="nav"><button id="giveup">答えを見る</button><button class="primary" id="submit">Submit</button></div>
+        </div>` : '<div class="tapzone" id="tap">タップで答えを表示</div>'}
         <div class="answer hidden" id="ans">${answer}</div>
       </div>
       <div class="actions">
@@ -287,7 +319,8 @@ function startStudy(sec, m) {
         <button id="say">🔊 英文</button>
         <button id="next">次へ ›</button>
       </div>`;
-    document.getElementById('card').onclick = reveal;
+    if (m === 'sentence') typing(c);
+    else document.getElementById('card').onclick = reveal;
     document.getElementById('say').onclick = () => { synth && synth.cancel(); speak(m === 'word' && !revealed ? spoken(c.w.w) : plain(it.en)); };
     document.getElementById('prev').onclick = () => go(-1);
     document.getElementById('next').onclick = () => go(1);
@@ -301,6 +334,60 @@ function startStudy(sec, m) {
     document.getElementById('tap').style.display = 'none';
     document.getElementById('ans').classList.remove('hidden');
     if (settings.autoSpeak) { synth && synth.cancel(); speak(plain(cards[i].it.en)); }
+  }
+  // 和訳→英文: 入力を採点し、間違えた語だけを穴埋めにして出し直す
+  function typing(c) {
+    const $ = id => document.getElementById(id);
+    const tap = $('tap');
+    const toks = plain(c.it.en).split(/\s+/).filter(Boolean).map(t => {
+      const [, pre, core, post] = t.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
+      return { t, pre, core, post, n: norm(t) };
+    });
+    const ok = toks.map(x => !x.n); // 記号だけの語は最初から正解扱い
+    let tries = 0;
+    const firstTry = () => {
+      const want = [], at = [];
+      toks.forEach((x, k) => { ok[k] = !x.n; if (x.n) { want.push(x.n); at.push(k); } });
+      const got = $('typed').value.split(/\s+/).map(norm).filter(Boolean);
+      matched(want, got).forEach(j => { ok[at[j]] = true; });
+      return got.length === want.length;
+    };
+    const showFill = () => {
+      const fill = $('fill');
+      fill.innerHTML = toks.map((x, k) => ok[k] ? esc(x.t) : `${esc(x.pre)}<input data-k="${k}" class="${tries > 1 ? 'miss' : ''}"
+        style="width:calc(${x.core.length}ch + 12px)" placeholder="${esc(x.core[0] || '')}"
+        autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go">${esc(x.post)}`).join(' ');
+      fill.hidden = false; $('typed').hidden = true;
+      fill.querySelectorAll('input').forEach(el => el.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } });
+      const first = fill.querySelector('input'); first && first.focus();
+    };
+    const submit = () => {
+      tries++;
+      if (tries === 1) {
+        const sameLen = firstTry();
+        if (ok.every(Boolean)) {
+          if (sameLen) return excellent();
+          tries = 0; $('msg').textContent = '余分な語が入っています'; return;
+        }
+      } else {
+        $('fill').querySelectorAll('input').forEach(el => { if (norm(el.value) === toks[el.dataset.k].n) ok[el.dataset.k] = true; });
+        if (ok.every(Boolean)) return excellent();
+      }
+      $('msg').textContent = '下線の所を入力してください';
+      showFill();
+    };
+    const excellent = () => {
+      if (tries === 1) delete prog.weak[c.key]; else prog.weak[c.key] = true;
+      mark(c);
+      revealed = true;
+      tap.innerHTML = '<div class="excellent">Excellent!</div>';
+      $('ans').classList.remove('hidden');
+      setTimeout(() => { if (cards[i] === c && document.body.contains(tap)) go(1); }, 1200);
+    };
+    $('submit').onclick = submit;
+    $('giveup').onclick = reveal;
+    $('typed').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
+    $('typed').focus();
   }
   function mark(c) { prog.seen[c.key] = true; saveProg(); }
   function go(d) {
