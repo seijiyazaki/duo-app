@@ -235,7 +235,7 @@ async function loadAudio() {
   const st = (await audioDB()).transaction('mp3').objectStore('mp3');
   const [keys, blobs] = await Promise.all([idb(st.getAllKeys()), idb(st.getAll())]);
   audioUrls.forEach(u => URL.revokeObjectURL(u));
-  audioUrls = new Map(keys.map((k, n) => [k, URL.createObjectURL(blobs[n])]));
+  audioUrls = new Map(keys.map((k, n) => [k, URL.createObjectURL(new Blob([blobs[n]], { type: 'audio/mpeg' }))]));
 }
 function sayEn(it, onend) {
   const url = audioUrls.get(parseInt(it.no, 10));
@@ -243,10 +243,14 @@ function sayEn(it, onend) {
   player.onended = player.onerror = onend || null;
   player.src = url;
   player.defaultPlaybackRate = player.playbackRate = settings.rate;
-  player.play().catch(() => onend && onend());
+  player.play().catch(err => {
+    if (onend) onend();
+    else if (err.name !== 'AbortError') toast(`再生できませんでした（${err.name}）`, 5000);
+  });
 }
 
-// zip の中身を [{ name, blob }] で返す（無圧縮と deflate に対応）
+// zip の中身を [{ name, buf }] で返す（無圧縮と deflate に対応）
+// iPhone の Safari は File から切り出した Blob をうまく保存できないことがあるので、ArrayBuffer で扱う
 async function unzip(file) {
   const v = new DataView(await file.arrayBuffer());
   let e = v.byteLength - 22;
@@ -258,9 +262,9 @@ async function unzip(file) {
     const nameLen = v.getUint16(p + 28, true), local = v.getUint32(p + 42, true);
     const name = new TextDecoder().decode(new Uint8Array(v.buffer, p + 46, nameLen));
     const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
-    const raw = file.slice(start, start + size);
-    const blob = method === 8 ? await new Response(raw.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob() : raw;
-    out.push({ name, blob: new Blob([blob], { type: 'audio/mpeg' }) });
+    const raw = v.buffer.slice(start, start + size);
+    const buf = method === 8 ? await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer() : raw;
+    out.push({ name, buf });
     p += 46 + nameLen + v.getUint16(p + 30, true) + v.getUint16(p + 32, true);
   }
   return out;
@@ -275,11 +279,11 @@ async function importAudio(file) {
     const tx = (await audioDB()).transaction('mp3', 'readwrite');
     const st = tx.objectStore('mp3');
     st.clear();
-    mp3.forEach(f => st.put(f.blob, parseInt(f.no, 10)));
+    mp3.forEach(f => st.put(f.buf, parseInt(f.no, 10)));
     await new Promise((ok, ng) => { tx.oncomplete = ok; tx.onerror = () => ng(tx.error); });
     await loadAudio();
     toast(`${audioUrls.size} 文の音声を取り込みました`); showSettings();
-  } catch (err) { toast('音声を取り込めませんでした'); }
+  } catch (err) { toast(`音声を取り込めませんでした（${err.name}: ${err.message}）`, 8000); }
 }
 
 // ---------- 画面 ----------
@@ -293,9 +297,9 @@ function setHeader(title, back) {
 backBtn.onclick = () => { stopSpeak(); backTo && backTo(); };
 document.getElementById('settingsBtn').onclick = () => { stopSpeak(); showSettings(); };
 
-function toast(msg) {
+function toast(msg, ms = 1800) {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
-  document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms);
 }
 
 function showHome() {
