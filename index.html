@@ -220,7 +220,67 @@ function speak(text, lang = 'en', onend) {
   if (onend) { u.onend = onend; u.onerror = onend; }
   synth.speak(u);
 }
-const stopSpeak = () => { listenRun = null; synth && synth.cancel(); };
+const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); };
+
+// 例文の MP3: zip から取り込んで IndexedDB に例文番号で保存する。ないときは読み上げ機能を使う
+const player = new Audio();
+let audioUrls = new Map();
+const idb = r => new Promise((ok, ng) => { r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error); });
+function audioDB() {
+  const r = indexedDB.open('duo-audio', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('mp3');
+  return idb(r);
+}
+async function loadAudio() {
+  const st = (await audioDB()).transaction('mp3').objectStore('mp3');
+  const [keys, blobs] = await Promise.all([idb(st.getAllKeys()), idb(st.getAll())]);
+  audioUrls.forEach(u => URL.revokeObjectURL(u));
+  audioUrls = new Map(keys.map((k, n) => [k, URL.createObjectURL(blobs[n])]));
+}
+function sayEn(it, onend) {
+  const url = audioUrls.get(parseInt(it.no, 10));
+  if (!url) { speak(plain(it.en), 'en', onend); return; }
+  player.onended = player.onerror = onend || null;
+  player.src = url;
+  player.defaultPlaybackRate = player.playbackRate = settings.rate;
+  player.play().catch(() => onend && onend());
+}
+
+// zip の中身を [{ name, blob }] で返す（無圧縮と deflate に対応）
+async function unzip(file) {
+  const v = new DataView(await file.arrayBuffer());
+  let e = v.byteLength - 22;
+  while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('zip ではありません');
+  const out = [];
+  for (let p = v.getUint32(e + 16, true), n = v.getUint16(e + 10, true); n > 0; n--) {
+    const method = v.getUint16(p + 10, true), size = v.getUint32(p + 20, true);
+    const nameLen = v.getUint16(p + 28, true), local = v.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(new Uint8Array(v.buffer, p + 46, nameLen));
+    const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+    const raw = file.slice(start, start + size);
+    const blob = method === 8 ? await new Response(raw.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob() : raw;
+    out.push({ name, blob: new Blob([blob], { type: 'audio/mpeg' }) });
+    p += 46 + nameLen + v.getUint16(p + 30, true) + v.getUint16(p + 32, true);
+  }
+  return out;
+}
+
+async function importAudio(file) {
+  toast('音声を読み込んでいます…');
+  try {
+    const mp3 = (await unzip(file)).map(f => ({ ...f, no: (f.name.match(/(?:^|\/)(\d+)\.mp3$/i) || [])[1] }))
+      .filter(f => f.no && !/(^|\/)(__MACOSX|\._)/.test(f.name));
+    if (!mp3.length) { toast('MP3 が見つかりませんでした'); return; }
+    const tx = (await audioDB()).transaction('mp3', 'readwrite');
+    const st = tx.objectStore('mp3');
+    st.clear();
+    mp3.forEach(f => st.put(f.blob, parseInt(f.no, 10)));
+    await new Promise((ok, ng) => { tx.oncomplete = ok; tx.onerror = () => ng(tx.error); });
+    await loadAudio();
+    toast(`${audioUrls.size} 文の音声を取り込みました`); showSettings();
+  } catch (err) { toast('音声を取り込めませんでした'); }
+}
 
 // ---------- 画面 ----------
 const app = document.getElementById('app');
@@ -321,7 +381,7 @@ function startStudy(sec, m) {
       </div>`;
     if (m === 'sentence') typing(c);
     else document.getElementById('card').onclick = reveal;
-    document.getElementById('say').onclick = () => { synth && synth.cancel(); speak(m === 'word' && !revealed ? spoken(c.w.w) : plain(it.en)); };
+    document.getElementById('say').onclick = () => { stopSpeak(); m === 'word' && !revealed ? speak(spoken(c.w.w)) : sayEn(it); };
     document.getElementById('prev').onclick = () => go(-1);
     document.getElementById('next').onclick = () => go(1);
     document.getElementById('ok').onclick = () => { delete prog.weak[c.key]; mark(c); go(1); };
@@ -333,7 +393,7 @@ function startStudy(sec, m) {
     revealed = true;
     document.getElementById('tap').style.display = 'none';
     document.getElementById('ans').classList.remove('hidden');
-    if (settings.autoSpeak) { synth && synth.cancel(); speak(plain(cards[i].it.en)); }
+    if (settings.autoSpeak) { stopSpeak(); sayEn(cards[i].it); }
   }
   // 和訳→英文: 入力を採点し、間違えた語だけを穴埋めにして出し直す
   function typing(c) {
@@ -446,6 +506,12 @@ function showListen(sec) {
     stopSpeak();
     const run = listenRun = {};
     let k = 0;
+    // iPhone は最初の MP3 再生をボタン操作の中で行わないと、あとの再生を止める。和訳から読むときは無音で一度鳴らしておく
+    const first = audioUrls.get(parseInt(its[0].no, 10));
+    if (first && settings.listenJa) {
+      player.src = first; player.muted = true;
+      player.play().then(() => player.pause()).catch(() => {}).finally(() => { player.muted = false; });
+    }
     const step = () => {
       if (listenRun !== run || k >= its.length) { if (listenRun === run) listenRun = null; return; }
       const it = its[k];
@@ -453,7 +519,7 @@ function showListen(sec) {
       document.getElementById('lja').textContent = it.ja;
       document.getElementById('len').innerHTML = marked(it.en);
       let rep = settings.listenRepeat;
-      const en = () => listenRun === run && speak(plain(it.en), 'en', () => {
+      const en = () => listenRun === run && sayEn(it, () => {
         if (--rep > 0) setTimeout(en, 500); else { k++; setTimeout(step, 900); }
       });
       settings.listenJa ? speak(it.ja, 'ja', () => setTimeout(en, 300)) : en();
@@ -475,6 +541,13 @@ function showSettings() {
     <label class="field">通し聞きで和訳も読む <input type="checkbox" id="lja" ${settings.listenJa ? 'checked' : ''}></label>
     <label class="field">通し聞きの英文回数 <select id="lrep">${[1, 2, 3].map(n => `<option ${n === settings.listenRepeat ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <div class="nav"><button id="test">🔊 試しに読む</button></div>
+
+    <h2>音声（MP3）</h2>
+    <p class="note">例文ごとの MP3（<code>001.mp3</code> 〜 <code>560.mp3</code>）をまとめた zip を取り込むと、英文をその音声で再生します。
+      音声がない文は、これまでどおり iPhone の読み上げ機能で読みます。速さは「英文の速さ」に合わせます。</p>
+    <div class="tools"><button id="audioBtn">zip を選ぶ</button></div>
+    <input type="file" id="audioIn" accept=".zip,application/zip" hidden>
+    <p class="note">現在 ${audioUrls.size} 文の音声</p>
 
     <h2>データの取り込み</h2>
     <p class="note">1行に1例文。列は <code>セクション, 番号, 英文, 和訳, 見出し語の意味</code> の順です。
@@ -507,6 +580,8 @@ function showSettings() {
   $('file').onclick = () => $('fileIn').click();
   $('fileIn').onchange = async e => { const f = e.target.files[0]; if (f) $('csv').value = await f.text(); };
   $('imp').onclick = () => importText($('csv').value);
+  $('audioBtn').onclick = () => $('audioIn').click();
+  $('audioIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importAudio(f); };
   $('exp').onclick = exportBackup;
   $('resetP').onclick = () => {
     if (!confirm('苦手の印と進み具合をすべて消します。よろしいですか？')) return;
@@ -547,6 +622,7 @@ async function exportBackup() {
 }
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+loadAudio().catch(() => {});
 showHome();
 </script>
 </body>
