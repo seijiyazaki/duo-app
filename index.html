@@ -100,6 +100,8 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .fill input.miss { border-bottom-color: var(--weak); }
 .msg { font-size: 14px; color: var(--weak); }
 .msg:empty { display: none; }
+.playbtn { width: 100%; padding: 16px; font-size: 18px; font-weight: 700; background: var(--weak); border-color: var(--weak); color: var(--accent-text); }
+.playbtn.on { background: var(--good); border-color: var(--good); }
 .excellent { font-size: 30px; font-weight: 800; color: var(--good); text-align: center; padding: 12px 0; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 20; }
 </style>
@@ -127,8 +129,9 @@ let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
 
-const VERSION = '1.12'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.13'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.13', d: '2026-11-02', items: ['通し聞きの再生・停止を1つのボタンにした（停止中はオレンジ、再生中は緑）', '通し聞きに英文の回数ボタン（1x・2x・3x）を付けた。2回以上は間に3秒あける'] },
   { v: '1.12', d: '2026-11-02', items: ['穴埋めを入力・採点式にした（間違えた所は赤い下線で入れ直す）', '穴埋めで「答えを見る」の後に「答えを隠す」で入力に戻れるようにした'] },
   { v: '1.11', d: '2026-11-02', items: ['ホームの見出しにバージョンを表示', '設定から Change log を見られるようにした', '音声入力（🎤 話す）を取り除いた'] },
   { v: '1.10', d: '2026-11-02', items: ['音声入力: 1文を聞き終えるか黙ったら聞き取りを止めるようにした'] },
@@ -559,12 +562,22 @@ function showListen(sec) {
     <div class="card"><div class="meta"><span id="lpos">${its.length}文</span></div>
       <div class="prompt" id="lja">再生ボタンを押すと、${settings.listenJa ? '和訳→' : ''}英文の順に読み上げます。</div>
       <div class="answer en" id="len"></div></div>
-    <div class="nav"><button class="primary" id="play">▶ 再生</button><button id="stop">■ 停止</button></div>
-    <p class="note">日本語の読み上げ・英文の繰り返し回数は設定で変えられます。</p>`;
-  document.getElementById('stop').onclick = stopSpeak;
-  document.getElementById('play').onclick = () => {
+    <div class="tools" id="lrep" style="margin:14px 0 0">${[1, 2, 3].map(n =>
+      `<button data-n="${n}" class="${n === settings.listenRepeat ? 'on' : ''}">${n}x</button>`).join('')}</div>
+    <div class="nav"><button class="playbtn" id="play"></button></div>
+    <p class="note">ボタンを押すたびに再生と停止が切り替わります。1x〜3x は英文を読む回数で、2回以上のときは間に3秒あけます。日本語の読み上げは設定で切り替えられます。</p>`;
+  const btn = document.getElementById('play');
+  const setPlaying = on => { btn.classList.toggle('on', on); btn.textContent = on ? '▶ 再生中' : '■ 停止中'; };
+  setPlaying(false);
+  document.querySelectorAll('#lrep button').forEach(b => b.onclick = () => {
+    settings.listenRepeat = +b.dataset.n; saveSettings();
+    document.querySelectorAll('#lrep button').forEach(x => x.classList.toggle('on', x === b));
+  });
+  btn.onclick = () => {
+    if (listenRun) { stopSpeak(); setPlaying(false); return; }
     stopSpeak();
     const run = listenRun = {};
+    setPlaying(true);
     let k = 0;
     // iPhone は最初の MP3 再生をボタン操作の中で行わないと、あとの再生を止める。和訳から読むときは無音で一度鳴らしておく
     const first = audioUrls.get(parseInt(its[0].no, 10));
@@ -573,14 +586,14 @@ function showListen(sec) {
       player.play().then(() => player.pause()).catch(() => {}).finally(() => { player.muted = false; });
     }
     const step = () => {
-      if (listenRun !== run || k >= its.length) { if (listenRun === run) listenRun = null; return; }
+      if (listenRun !== run || k >= its.length) { if (listenRun === run) { listenRun = null; setPlaying(false); } return; }
       const it = its[k];
       document.getElementById('lpos').textContent = `No.${it.no} · ${k + 1} / ${its.length}`;
       document.getElementById('lja').textContent = it.ja;
       document.getElementById('len').innerHTML = marked(it.en);
-      let rep = settings.listenRepeat;
+      let done = 0; // 回数は再生中に変えても次の読みから効く
       const en = () => listenRun === run && sayEn(it, () => {
-        if (--rep > 0) setTimeout(en, 500); else { k++; setTimeout(step, 900); }
+        if (++done < settings.listenRepeat) setTimeout(en, 3000); else { k++; setTimeout(step, 900); }
       });
       settings.listenJa ? speak(it.ja, 'ja', () => setTimeout(en, 300)) : en();
     };
@@ -599,7 +612,6 @@ function showSettings() {
     <label class="field">声 <select id="voice"><option value="">標準</option>${en.map(v =>
       `<option value="${esc(v.voiceURI)}" ${v.voiceURI === settings.voice ? 'selected' : ''}>${esc(v.name)} (${v.lang})</option>`).join('')}</select></label>
     <label class="field">通し聞きで和訳も読む <input type="checkbox" id="lja" ${settings.listenJa ? 'checked' : ''}></label>
-    <label class="field">通し聞きの英文回数 <select id="lrep">${[1, 2, 3].map(n => `<option ${n === settings.listenRepeat ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <div class="nav"><button id="test">🔊 試しに読む</button></div>
 
     <h2>音声（MP3）</h2>
@@ -639,7 +651,6 @@ function showSettings() {
   $('auto').onchange = e => { settings.autoSpeak = e.target.checked; saveSettings(); };
   $('voice').onchange = e => { settings.voice = e.target.value; saveSettings(); };
   $('lja').onchange = e => { settings.listenJa = e.target.checked; saveSettings(); };
-  $('lrep').onchange = e => { settings.listenRepeat = +e.target.value; saveSettings(); };
   $('test').onclick = () => { stopSpeak(); speak('Practice makes perfect.'); };
   $('file').onclick = () => $('fileIn').click();
   $('fileIn').onchange = async e => { const f = e.target.files[0]; if (f) $('csv').value = await f.text(); };
