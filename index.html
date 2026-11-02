@@ -22,6 +22,7 @@
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
@@ -94,6 +95,7 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .typing { display: flex; flex-direction: column; gap: 10px; }
 .typing textarea { min-height: 84px; font: 17px -apple-system, "Helvetica Neue", sans-serif; line-height: 1.5; }
 .typing .nav { margin-top: 0; }
+.typing .nav button { padding: 10px 6px; white-space: nowrap; }
 .fill { line-height: 2.2; }
 .fill input { font: inherit; border: 0; border-bottom: 2px solid var(--accent); background: transparent; color: var(--text); padding: 0 2px; outline: none; border-radius: 0; }
 .fill input.miss { border-bottom-color: var(--weak); }
@@ -229,7 +231,17 @@ function speak(text, lang = 'en', onend) {
   if (onend) { u.onend = onend; u.onerror = onend; }
   synth.speak(u);
 }
-const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); };
+const stopSpeak = () => {
+  listenRun = null; synth && synth.cancel(); player.pause();
+  if (recog) {
+    const r = recog; recog = null; r.abort();
+    const b = document.getElementById('mic'); if (b) b.textContent = '🎤 話す';
+  }
+};
+
+// 音声入力（英語）。使えない環境では 🎤 ボタンを出さない
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
 
 // 例文の MP3: zip から取り込んで IndexedDB に例文番号で保存する。ないときは読み上げ機能を使う
 const player = new Audio();
@@ -380,10 +392,12 @@ function startStudy(sec, m) {
           <span>${prog.weak[c.key] ? '<span class="flag">● 苦手</span>' : ''}</span></div>
         ${prompt}
         ${m === 'sentence' ? `<div class="typing" id="tap">
-          <div class="prompt en fill" id="fill" hidden></div>
-          <textarea id="typed" class="en" placeholder="英文を入力" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
-          <div class="msg" id="msg"></div>
-          <div class="nav"><button id="giveup">答えを見る</button><button class="primary" id="submit">Submit</button></div>
+          <div class="typing" id="inputs">
+            <div class="prompt en fill" id="fill" hidden></div>
+            <textarea id="typed" class="en" placeholder="英文を入力${SR ? '（🎤 で話しても入力できます）' : ''}" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+            <div class="msg" id="msg"></div>
+          </div>
+          <div class="nav"><button id="giveup">答えを見る</button>${SR ? '<button id="mic">🎤 話す</button>' : ''}<button class="primary" id="submit">Submit</button></div>
         </div>` : '<div class="tapzone" id="tap">タップで答えを表示</div>'}
         <div class="answer hidden" id="ans">${answer}</div>
       </div>
@@ -450,7 +464,34 @@ function startStudy(sec, m) {
       });
       const first = fill.querySelector('input'); first && first.focus();
     };
+    // 話した英文を入れる。穴埋めのときは、話した語のうち空欄の答えと合う語だけを空欄に入れる
+    const listen = () => {
+      if (recog) { recog.stop(); return; }
+      stopSpeak();
+      const r = recog = new SR();
+      r.lang = 'en-US'; r.interimResults = true;
+      const fillMode = !$('fill').hidden, base = $('typed').value.trim();
+      r.onresult = e => {
+        if (!document.body.contains(tap)) return;
+        const said = [...e.results].map(x => x[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
+        if (!fillMode) { $('typed').value = (base ? base + ' ' : '') + said; return; }
+        if (!e.results[e.results.length - 1].isFinal) return;
+        const ins = [...$('fill').querySelectorAll('input')];
+        matched(ins.map(el => toks[el.dataset.k].n), said.split(/\s+/).map(norm).filter(Boolean))
+          .forEach(j => { ins[j].value = toks[ins[j].dataset.k].core; });
+        $('msg').textContent = `聞き取り: ${said}`;
+      };
+      r.onerror = e => {
+        if (['aborted', 'no-speech'].includes(e.error)) return;
+        const hint = ['not-allowed', 'service-not-allowed'].includes(e.error) ? '。マイクと音声認識の許可、Siri と音声入力の設定を確認してください' : '';
+        toast(`音声入力できませんでした（${e.error}）${hint}`, 6000);
+      };
+      r.onend = () => { if (recog === r) recog = null; const b = $('mic'); if (b) b.textContent = '🎤 話す'; };
+      try { r.start(); } catch (err) { recog = null; toast(`音声入力できませんでした（${err.name}）`, 5000); return; }
+      $('mic').textContent = '■ 止める';
+    };
     const submit = () => {
+      if (recog) stopSpeak();
       tries++;
       if (tries === 1) {
         const sameLen = firstTry();
@@ -474,7 +515,17 @@ function startStudy(sec, m) {
       setTimeout(() => { if (cards[i] === c && document.body.contains(tap)) go(1); }, 1200);
     };
     $('submit').onclick = submit;
-    $('giveup').onclick = reveal;
+    // 答えを見る／隠すを切り替える。隠すと入力に戻る
+    $('giveup').onclick = () => {
+      revealed = !revealed;
+      stopSpeak();
+      $('ans').classList.toggle('hidden', !revealed);
+      [$('inputs'), $('submit'), $('mic')].forEach(el => { if (el) el.hidden = revealed; });
+      $('giveup').textContent = revealed ? '答えを隠す' : '答えを見る';
+      if (revealed) { if (settings.autoSpeak) sayEn(c.it); }
+      else ($('fill').hidden ? $('typed') : $('fill').querySelector('input')).focus();
+    };
+    if ($('mic')) $('mic').onclick = listen;
     $('typed').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
     $('typed').focus();
   }
