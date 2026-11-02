@@ -71,7 +71,6 @@ button:disabled { opacity: .4; }
 .answer.hidden { display: none; }
 .en { font-family: -apple-system, "Helvetica Neue", sans-serif; }
 mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
-.blank { border-bottom: 2px solid var(--accent); padding: 0 3px; letter-spacing: 1px; color: var(--accent); }
 .words { font-size: 14px; color: var(--sub); line-height: 1.8; }
 .words b { color: var(--text); }
 .tapzone { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--sub); font-size: 14px; border-radius: 12px; border: 1px dashed var(--line); min-height: 64px; }
@@ -128,8 +127,9 @@ let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
 
-const VERSION = '1.11'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.12'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.12', d: '2026-11-02', items: ['穴埋めを入力・採点式にした（間違えた所は赤い下線で入れ直す）', '穴埋めで「答えを見る」の後に「答えを隠す」で入力に戻れるようにした'] },
   { v: '1.11', d: '2026-11-02', items: ['ホームの見出しにバージョンを表示', '設定から Change log を見られるようにした', '音声入力（🎤 話す）を取り除いた'] },
   { v: '1.10', d: '2026-11-02', items: ['音声入力: 1文を聞き終えるか黙ったら聞き取りを止めるようにした'] },
   { v: '1.09', d: '2026-11-02', items: ['音声入力: 2回目以降も使えるように直した'] },
@@ -194,8 +194,6 @@ const plain = en => en.replace(/\[([^\]]+)\]/g, '$1');
 const spoken = w => w.replace(/\.\.\.|…|~|[()]/g, ' ').replace(/\s\d+$/, '').trim();
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const marked = en => esc(en).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>');
-const blanked = en => esc(en).replace(/\[([^\]]+)\]/g, (_, w) =>
-  `<span class="blank">${w.split(' ').map(p => p[0] + '_'.repeat(Math.max(p.length - 1, 1))).join(' ')}</span>`);
 
 // 入力の採点用: 大文字小文字・記号・アクセントの違いは見ない
 const norm = w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -383,7 +381,7 @@ function startStudy(sec, m) {
       prompt = `<div class="prompt">${esc(it.ja)}</div>`;
       answer = `<div class="en">${marked(it.en)}</div>${wordList(it)}`;
     } else if (m === 'cloze') {
-      prompt = `<div class="prompt en">${blanked(it.en)}</div><div class="words">${esc(it.ja)}</div>`;
+      prompt = `<div class="words">${esc(it.ja)}</div>`;
       answer = `<div class="en">${marked(it.en)}</div>${wordList(it)}`;
     } else {
       prompt = `<div class="prompt en" style="font-size:28px;font-weight:700;text-align:center">${esc(c.w.w)}</div>`;
@@ -395,7 +393,7 @@ function startStudy(sec, m) {
         <div class="meta"><span>No.${esc(it.no)} · ${i + 1} / ${cards.length}</span>
           <span>${prog.weak[c.key] ? '<span class="flag">● 苦手</span>' : ''}</span></div>
         ${prompt}
-        ${m === 'sentence' ? `<div class="typing" id="tap">
+        ${m === 'sentence' || m === 'cloze' ? `<div class="typing" id="tap">
           <div class="typing" id="inputs">
             <div class="prompt en fill" id="fill" hidden></div>
             <textarea id="typed" class="en" placeholder="英文を入力" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
@@ -414,7 +412,7 @@ function startStudy(sec, m) {
         <button id="say">🔊 英文</button>
         <button id="next">次へ ›</button>
       </div>`;
-    if (m === 'sentence') typing(c);
+    if (m === 'sentence' || m === 'cloze') typing(c, m === 'cloze');
     else document.getElementById('card').onclick = reveal;
     document.getElementById('say').onclick = () => { stopSpeak(); m === 'word' && !revealed ? speak(spoken(c.w.w)) : sayEn(it); };
     document.getElementById('prev').onclick = () => go(-1);
@@ -431,14 +429,19 @@ function startStudy(sec, m) {
     if (settings.autoSpeak) { stopSpeak(); sayEn(cards[i].it); }
   }
   // 和訳→英文: 入力を採点し、間違えた語だけを穴埋めにして出し直す
-  function typing(c) {
+  // 穴埋め（cloze）: [ ] の語を最初から空欄にして採点する
+  function typing(c, cloze) {
     const $ = id => document.getElementById(id);
     const tap = $('tap');
-    const toks = plain(c.it.en).split(/\s+/).filter(Boolean).map(t => {
+    let inBr = false;
+    const toks = c.it.en.split(/\s+/).filter(Boolean).map(raw => {
+      const b = inBr || raw.includes('[');
+      inBr = b && !raw.includes(']');
+      const t = raw.replace(/[[\]]/g, '');
       const [, pre, core, post] = t.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
-      return { t, pre, core, post, n: norm(t) };
+      return { t, pre, core, post, n: norm(t), b };
     });
-    const ok = toks.map(x => !x.n); // 記号だけの語は最初から正解扱い
+    const ok = toks.map(x => !x.n || (cloze && !x.b)); // 記号だけの語は最初から正解扱い
     let tries = 0;
     const firstTry = () => {
       const want = [], at = [];
@@ -449,7 +452,7 @@ function startStudy(sec, m) {
     };
     const showFill = () => {
       const fill = $('fill');
-      fill.innerHTML = toks.map((x, k) => ok[k] ? esc(x.t) : `${esc(x.pre)}<input data-k="${k}" class="${tries > 1 ? 'miss' : ''}"
+      fill.innerHTML = toks.map((x, k) => ok[k] ? esc(x.t) : `${esc(x.pre)}<input data-k="${k}" class="${tries > (cloze ? 0 : 1) ? 'miss' : ''}"
         style="width:calc(${x.core.length}ch + 12px)" placeholder="${esc(x.core[0] || '')}"
         autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go">${esc(x.post)}`).join(' ');
       fill.hidden = false; $('typed').hidden = true;
@@ -470,7 +473,7 @@ function startStudy(sec, m) {
     };
     const submit = () => {
       tries++;
-      if (tries === 1) {
+      if (tries === 1 && !cloze) {
         const sameLen = firstTry();
         if (ok.every(Boolean)) {
           if (sameLen) return excellent();
@@ -480,7 +483,7 @@ function startStudy(sec, m) {
         $('fill').querySelectorAll('input').forEach(el => { if (norm(el.value) === toks[el.dataset.k].n) ok[el.dataset.k] = true; });
         if (ok.every(Boolean)) return excellent();
       }
-      $('msg').textContent = '下線の所を入力してください';
+      $('msg').textContent = cloze ? '赤い下線の所を直してください' : '下線の所を入力してください';
       showFill();
     };
     const excellent = () => {
@@ -503,7 +506,7 @@ function startStudy(sec, m) {
       else ($('fill').hidden ? $('typed') : $('fill').querySelector('input')).focus();
     };
     $('typed').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
-    $('typed').focus();
+    if (cloze) showFill(); else $('typed').focus();
   }
   function mark(c) { prog.seen[c.key] = true; saveProg(); }
   function go(d) {
