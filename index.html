@@ -166,7 +166,27 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .msg:empty { display: none; }
 .playbtn { width: 100%; padding: 16px; font-size: 18px; font-weight: 700; background: var(--weak); border-color: var(--weak); color: var(--accent-text); }
 .playbtn.on { background: var(--good); border-color: var(--good); }
-.excellent { font-size: 30px; font-weight: 800; color: var(--good); text-align: center; padding: 12px 0; }
+.excellent { font-size: 30px; font-weight: 800; color: var(--good); text-align: center; padding: 12px 0; animation: pop .35s ease-out; }
+.excellent small { display: block; font-size: 13px; font-weight: 600; color: var(--sub); margin-top: 2px; }
+.excellent.lv1, .excellent.lv2 { font-size: 26px; }
+.excellent.lv3 { color: var(--accent); }
+.excellent.lv4, .excellent.lv5 { font-size: 32px; color: #0ea5e9; }
+.excellent.lv6, .excellent.lv7, .excellent.lv8, .excellent.lv9, .excellent.lv10 {
+  background: linear-gradient(90deg, #f59e0b, #ef4444, #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.excellent.lv8, .excellent.lv9 { font-size: 36px; }
+.excellent.lv10 { font-size: 40px; animation: pop .35s ease-out, glow 1.2s ease-in-out infinite alternate; }
+.excellent.miss { color: var(--sub); font-size: 22px; }
+.lvbar { display: flex; gap: 3px; justify-content: center; margin-top: 6px; }
+.lvbar i { width: 14px; height: 5px; border-radius: 3px; background: var(--line); }
+.lvbar i.on { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+@keyframes glow { to { filter: drop-shadow(0 0 10px rgba(245,158,11,.8)); } }
+#fx { position: fixed; inset: 0; z-index: 15; pointer-events: none; overflow: hidden; perspective: 600px; }
+.fx-emoji { position: absolute; font-size: 40px; line-height: 1; transform: translate(-50%,-50%); will-change: transform, opacity; }
+.fx-big { font-size: 64px; }
+.fx-huge { font-size: 96px; filter: drop-shadow(0 6px 18px rgba(245,158,11,.6)); }
+.fx-paper { position: absolute; width: 8px; height: 14px; border-radius: 2px; will-change: transform, opacity; }
+.fx-spark { position: absolute; width: 6px; height: 6px; border-radius: 50%; will-change: transform, opacity; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.12); } to { transform: scale(1); opacity: 1; } }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--solid); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 20; }
 </style>
 </head>
@@ -189,7 +209,7 @@ const store = {
 };
 let items = store.get('duo.items', []);
 let prog = store.get('duo.progress', { weak: {}, seen: {}, pos: {} });
-let settings = Object.assign({ rate: 0.9, autoSpeak: true, voice: '', listenJa: true, listenRepeat: 1 }, store.get('duo.settings', {}));
+let settings = Object.assign({ rate: 0.9, autoSpeak: true, chime: true, effects: true, voice: '', listenJa: true, listenRepeat: 1 }, store.get('duo.settings', {}));
 let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
@@ -203,8 +223,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.18'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.19'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.19', d: '2026-11-02', items: ['続けて1回で正解するほど表示が10段階で上がるようにした（Good → Nice! → … → Legendary!!）。2回目以降の正解や答えを見たときは OK で、連続は0に戻る', '正解したときに音を鳴らすようにした。レベルが上がると拍手、歓声、口笛が加わり、Lv.10 はスタンディングオベーションになる（設定で切り替え。マナーモードでも鳴る）', '正解の演出を付けた。レベルが上がると、拍手の手、紙吹雪、クラッカー、花火、トロフィーが出てくる（設定で切り替え）'] },
   { v: '1.18', d: '2026-11-02', items: ['右上の「設定」ボタンを三本線のアイコンにした', '上のバーを透明にした（下にスクロールしたときだけ上をうっすら暗くする）'] },
   { v: '1.17', d: '2026-11-02', items: ['設定に「デイリータスクを初期化」を追加（サイクル1の最初に戻し、スケジュール表の記録も消す）'] },
   { v: '1.16', d: '2026-11-02', items: ['ホームをデイリータスク中心にした（1日1 Section、穴埋め→和訳→英文の順。45日で1サイクル）', 'スケジュール表を追加（日ごとの学習時間とSection、カレンダー、完了予定日）。進み具合はここで変えられる', '画面ごとに海や山の背景を付けた', '今までのセクション一覧は「自由学習」に移した'] },
@@ -325,6 +346,180 @@ function speak(text, lang = 'en', onend, speed = 1) {
   if (onend) { u.onend = onend; u.onerror = onend; }
   synth.speak(u);
 }
+// 正解の音: 続けて1回で正解するほどレベル（1〜10）が上がり、音も高く長くなる。0 は2回目以降の正解
+// Web Audio で鳴らすので音声ファイルはいらない。iPhone のマナーモードでも聞こえるよう audioSession を playback にする（Safari 16.4 以降）
+let actx = null;
+const SCALE = [523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760, 2093, 2349, 2637];
+function chime(lv) {
+  if (!settings.chime) return;
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); loadSfx(); }
+    if (actx.state === 'suspended') actx.resume();
+    const t0 = actx.currentTime + 0.02;
+    const tone = (f, t, len, type = 'sine', vol = 0.22) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g).connect(actx.destination);
+      o.start(t); o.stop(t + len + 0.05);
+    };
+    if (!lv) { tone(392, t0, 0.5); return; }
+    const fx = SFX_OF[lv];
+    if (fx) playSfx(fx, t0 + 0.12);
+    const notes = SCALE.slice(lv - 1, lv - 1 + Math.min(2 + Math.floor(lv / 2), 6));
+    const gap = 0.1 - lv * 0.004, type = lv >= 6 ? 'triangle' : 'sine';
+    notes.forEach((f, k) => tone(f, t0 + k * gap, k === notes.length - 1 ? 0.7 : 0.28, type));
+    if (lv === 10) [1047, 1319, 1568, 2093].forEach(f => tone(f, t0 + notes.length * gap, 1.4, 'triangle', 0.12)); // 最後に和音
+  } catch (e) {}
+}
+// 拍手・歓声の MP3（sfx/、make_sfx.py で作った合成音）。最初に鳴らすときに読み込む
+const SFX_OF = [, '', '', 'clap1', 'clap1', 'clap2', 'clap2', 'cheer1', 'cheer1', 'cheer2', 'cheer3'];
+const sfxBuf = {};
+function loadSfx() {
+  [...new Set(SFX_OF.filter(Boolean))].forEach(name => {
+    if (sfxBuf[name]) return;
+    sfxBuf[name] = fetch(`sfx/${name}.mp3`).then(r => r.arrayBuffer())
+      .then(b => new Promise((ok, ng) => actx.decodeAudioData(b, ok, ng))).catch(() => { delete sfxBuf[name]; });
+  });
+}
+function playSfx(name, at) {
+  loadSfx();
+  Promise.resolve(sfxBuf[name]).then(buf => {
+    if (!buf) return;
+    const src = actx.createBufferSource(), g = actx.createGain();
+    src.buffer = buf; g.gain.value = 0.9;
+    src.connect(g).connect(actx.destination);
+    src.start(Math.max(at, actx.currentTime));
+  });
+}
+// 正解の演出: レベルが上がるほど、拍手の手 👏 → クラッカー 🎉 と紙吹雪 → 花火とトロフィーと増えていく
+// 画面の上に重ねた #fx に絵文字や紙片を出して Web Animations で動かし、終わったら消す（操作のじゃまはしない）
+const fxLayer = document.createElement('div');
+fxLayer.id = 'fx';
+document.body.appendChild(fxLayer);
+const CONFETTI = ['#f59e0b', '#ef4444', '#8b5cf6', '#22c55e', '#3b82f6', '#ec4899', '#facc15'];
+const rnd = (a, b) => a + Math.random() * (b - a);
+function fxEl(html, cls, x, y) {
+  const el = document.createElement('div');
+  el.className = cls; el.innerHTML = html;
+  el.style.left = `${x}px`; el.style.top = `${y}px`;
+  fxLayer.appendChild(el);
+  return el;
+}
+const fxRun = (el, frames, opt) => { el.animate(frames, { fill: 'forwards', ...opt }).onfinish = () => el.remove(); };
+// 手をたたきながら下から跳ね上がる 👏
+function hands(n, cx, cy) {
+  for (let k = 0; k < n; k++) {
+    // 文字にかからないよう、左右に交互に出す
+    const side = k % 2 ? 1 : -1, x = cx + side * rnd(115, 165), y = cy + rnd(-20, 50), s = rnd(0.8, 1.25), d = k * 90 + rnd(0, 120);
+    const el = fxEl('👏', 'fx-emoji', x, y);
+    fxRun(el, [
+      { transform: `translate(-50%,-50%) translateY(40px) scale(0)`, opacity: 0 },
+      { transform: `translate(-50%,-50%) translateY(-10px) scale(${s * 1.2}) rotate(-14deg)`, opacity: 1, offset: 0.2 },
+      { transform: `translate(-50%,-50%) translateY(-30px) scale(${s}) rotate(14deg)`, offset: 0.35 },
+      { transform: `translate(-50%,-50%) translateY(-45px) scale(${s}) rotate(-14deg)`, offset: 0.5 },
+      { transform: `translate(-50%,-50%) translateY(-60px) scale(${s}) rotate(14deg)`, opacity: 1, offset: 0.7 },
+      { transform: `translate(-50%,-50%) translateY(-100px) scale(${s * 0.9})`, opacity: 0 }
+    ], { duration: 1500, delay: d, easing: 'ease-out' });
+  }
+}
+// 紙片を (x, y) から角度 ang（度、0 が真上）のまわりに飛ばし、重力で落とす
+function confetti(n, x, y, ang, spread, power) {
+  for (let k = 0; k < n; k++) {
+    const a = (ang + rnd(-spread, spread)) * Math.PI / 180, v = power * rnd(0.55, 1);
+    const vx = Math.sin(a) * v, vy = -Math.cos(a) * v, g = 900, T = rnd(1.4, 2.2);
+    const el = fxEl('', 'fx-paper', x, y);
+    el.style.background = CONFETTI[k % CONFETTI.length];
+    if (k % 3 === 0) { el.style.width = el.style.height = '7px'; el.style.borderRadius = '50%'; }
+    const spin = rnd(-900, 900), frames = [];
+    for (let s = 0; s <= 10; s++) {
+      const t = T * s / 10, drag = 1 - s / 30;
+      frames.push({ transform: `translate(${vx * t * drag}px, ${vy * t + g * t * t / 2 * 0.6}px) rotate(${spin * t}deg) rotateX(${s * 120}deg)`,
+        opacity: s < 8 ? 1 : 1 - (s - 8) / 2 });
+    }
+    fxRun(el, frames, { duration: T * 1000, easing: 'linear' });
+  }
+}
+// 画面の下の角からクラッカー 🎉 を鳴らす
+function popper(side, delay = 0) {
+  const W = innerWidth, H = innerHeight, x = side < 0 ? 40 : W - 40, y = H - 90;
+  setTimeout(() => {
+    const el = fxEl('🎉', 'fx-emoji fx-big', x, y);
+    el.style.transform = `translate(-50%,-50%) scaleX(${side < 0 ? 1 : -1})`;
+    fxRun(el, [
+      { transform: `translate(-50%,-50%) scaleX(${side < 0 ? 1 : -1}) scale(0.3)`, opacity: 0 },
+      { transform: `translate(-50%,-50%) scaleX(${side < 0 ? 1 : -1}) scale(1.4)`, opacity: 1, offset: 0.15 },
+      { transform: `translate(-50%,-50%) scaleX(${side < 0 ? 1 : -1}) scale(1.1)`, opacity: 1, offset: 0.7 },
+      { transform: `translate(-50%,-50%) scaleX(${side < 0 ? 1 : -1}) scale(1)`, opacity: 0 }
+    ], { duration: 1600, easing: 'ease-out' });
+    confetti(45, x, y - 20, side < 0 ? 30 : -30, 22, Math.min(W, 520) * 1.6);
+  }, delay);
+}
+// 花火: 1点から丸く広がる光
+function firework(x, y, delay) {
+  setTimeout(() => {
+    const c = CONFETTI[Math.floor(rnd(0, CONFETTI.length))];
+    for (let k = 0; k < 28; k++) {
+      const a = k / 28 * Math.PI * 2, r = rnd(70, 120);
+      const el = fxEl('', 'fx-spark', x, y);
+      el.style.background = c; el.style.boxShadow = `0 0 8px ${c}`;
+      fxRun(el, [
+        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+        { transform: `translate(calc(-50% + ${Math.cos(a) * r}px), calc(-50% + ${Math.sin(a) * r}px)) scale(0.9)`, opacity: 1, offset: 0.6 },
+        { transform: `translate(calc(-50% + ${Math.cos(a) * r * 1.1}px), calc(-50% + ${Math.sin(a) * r * 1.1 + 30}px)) scale(0.3)`, opacity: 0 }
+      ], { duration: 1100, easing: 'cubic-bezier(.1,.8,.3,1)' });
+    }
+  }, delay);
+}
+// 上から降る紙吹雪
+function rain(n) {
+  for (let k = 0; k < n; k++) {
+    const x = rnd(0, innerWidth), el = fxEl('', 'fx-paper', x, -20), T = rnd(2000, 3200);
+    el.style.background = CONFETTI[k % CONFETTI.length];
+    const sway = rnd(30, 80);
+    fxRun(el, [0, 1, 2, 3, 4].map(s => ({
+      transform: `translate(${Math.sin(s * 1.6) * sway}px, ${(innerHeight + 40) * s / 4}px) rotate(${s * rnd(90, 200)}deg) rotateY(${s * 160}deg)`
+    })), { duration: T, delay: rnd(0, 700), easing: 'linear' });
+  }
+}
+// 真ん中に大きく出る絵文字（トロフィーなど）
+function badge(emoji, cx, cy) {
+  const el = fxEl(emoji, 'fx-emoji fx-huge', cx, cy - 95); // 文字の上に出す
+  fxRun(el, [
+    { transform: 'translate(-50%,-50%) scale(0) rotate(-30deg)', opacity: 0 },
+    { transform: 'translate(-50%,-50%) scale(1.5) rotate(10deg)', opacity: 1, offset: 0.25 },
+    { transform: 'translate(-50%,-50%) scale(1.2) rotate(0deg)', opacity: 1, offset: 0.75 },
+    { transform: 'translate(-50%,-160%) scale(0.8)', opacity: 0 }
+  ], { duration: 2400, easing: 'ease-out' });
+}
+function celebrate(lv, anchor) {
+  if (!settings.effects || !lv || !anchor || !fxLayer.animate) return;
+  const r = anchor.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const sparkles = Math.min(lv, 5);
+  for (let k = 0; k < sparkles; k++) { // ✨ は Lv.1 から
+    const el = fxEl('✨', 'fx-emoji', cx + (k % 2 ? 1 : -1) * rnd(90, 150), cy + rnd(-45, 25));
+    fxRun(el, [{ transform: 'translate(-50%,-50%) scale(0)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.1)', opacity: 1, offset: 0.4 },
+      { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 }], { duration: 900, delay: k * 90 });
+  }
+  if (lv >= 3) hands([, , , 1, 2, 3, 4, 5, 6, 7, 9][lv], cx, cy);
+  if (lv >= 5) confetti(lv >= 7 ? 0 : lv * 6, cx, cy, 0, 70, 420);
+  if (lv >= 7) popper(-1);
+  if (lv >= 8) popper(1, 150);
+  if (lv >= 9) { firework(innerWidth * 0.25, innerHeight * 0.22, 300); firework(innerWidth * 0.75, innerHeight * 0.18, 650); }
+  if (lv >= 10) {
+    badge('🏆', cx, cy);
+    rain(90);
+    firework(innerWidth * 0.5, innerHeight * 0.12, 1000);
+    popper(-1, 900); popper(1, 1100);
+  }
+}
+
+const LEVELS = ['OK', 'Good', 'Nice!', 'Great!', 'Super!', 'Awesome!', 'Excellent!', 'Fantastic!', 'Amazing!', 'Incredible!', 'Legendary!!'];
+let combo = 0; // 続けて1回で正解した数。学習を始めるたびに 0 に戻す
+
 const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); };
 
 // 例文の MP3: zip から取り込んで IndexedDB に例文番号で保存する。ないときは読み上げ機能を使う
@@ -673,6 +868,7 @@ function startStudy(sec, m, daily) {
   if (!cards.length) { toast('出題できる問題がありません'); return; }
   if (settings.shuffle && !daily) shuffle(cards);
   const posKey = `${m}:${sec}`;
+  combo = 0;
   const keepPos = !daily && sec !== 'weak' && !settings.shuffle; // シャッフル中は毎回最初から
   let i = Math.min(daily ? daily.pos : keepPos ? prog.pos[posKey] || 0 : 0, cards.length - 1);
   let revealed = false;
@@ -748,7 +944,7 @@ function startStudy(sec, m, daily) {
       return { t, pre, core, post, n: norm(t), b };
     });
     const ok = toks.map(x => !x.n || (cloze && !x.b)); // 記号だけの語は最初から正解扱い
-    let tries = 0;
+    let tries = 0, peeked = false; // peeked: 答えを見たことがある
     const firstTry = () => {
       const want = [], at = [];
       toks.forEach((x, k) => { ok[k] = !x.n; if (x.n) { want.push(x.n); at.push(k); } });
@@ -793,17 +989,25 @@ function startStudy(sec, m, daily) {
       showFill();
     };
     const excellent = () => {
-      if (tries === 1) delete prog.weak[c.key]; else prog.weak[c.key] = true;
+      if (tries === 1 && !peeked) delete prog.weak[c.key]; else prog.weak[c.key] = true;
       mark(c);
       revealed = true;
-      tap.innerHTML = '<div class="excellent">Excellent!</div>';
+      combo = tries === 1 && !peeked ? combo + 1 : 0;
+      const lv = Math.min(combo, 10);
+      chime(lv);
+      tap.innerHTML = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}">${LEVELS[lv]}
+        <small>${lv ? `${combo}問連続で正解 · Lv.${lv}` : peeked ? '答えを見て正解 · 連続は 0 から' : `${tries}回目で正解 · 連続は 0 から`}</small>
+        ${lv ? `<div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>`;
+      celebrate(lv, tap.querySelector('.excellent'));
       $('ans').classList.remove('hidden');
-      setTimeout(() => { if (cards[i] === c && document.body.contains(tap)) go(1); }, 1200);
+      // 歓声が大きいレベルほど、少し長く余韻を見せてから次へ
+      setTimeout(() => { if (cards[i] === c && document.body.contains(tap)) go(1); }, lv >= 10 ? 2600 : lv >= 7 ? 1800 : 1200);
     };
     $('submit').onclick = submit;
     // 答えを見る／隠すを切り替える。隠すと入力に戻る
     $('giveup').onclick = () => {
       revealed = !revealed;
+      if (revealed) peeked = true;
       stopSpeak();
       $('ans').classList.toggle('hidden', !revealed);
       [$('inputs'), $('submit')].forEach(el => { if (el) el.hidden = revealed; });
@@ -912,6 +1116,8 @@ function showSettings() {
   app.innerHTML = `<div class="panel">
     <h2>読み上げ</h2>
     <label class="field">英文の速さ <input type="range" id="rate" min="0.5" max="1.3" step="0.05" value="${settings.rate}"></label>
+    <label class="field">正解したら音を鳴らす <input type="checkbox" id="chime" ${settings.chime ? 'checked' : ''}></label>
+    <label class="field">正解したら拍手やクラッカーを出す <input type="checkbox" id="effects" ${settings.effects ? 'checked' : ''}></label>
     <label class="field">答えを出したら自動で読む <input type="checkbox" id="auto" ${settings.autoSpeak ? 'checked' : ''}></label>
     <label class="field">声 <select id="voice"><option value="">標準</option>${en.map(v =>
       `<option value="${esc(v.voiceURI)}" ${v.voiceURI === settings.voice ? 'selected' : ''}>${esc(v.name)} (${v.lang})</option>`).join('')}</select></label>
@@ -959,6 +1165,8 @@ function showSettings() {
     <p class="note">ver${VERSION}</p></div>`;
   const $ = id => document.getElementById(id);
   $('rate').oninput = e => { settings.rate = +e.target.value; saveSettings(); };
+  $('chime').onchange = e => { settings.chime = e.target.checked; saveSettings(); if (settings.chime) chime(5); };
+  $('effects').onchange = e => { settings.effects = e.target.checked; saveSettings(); };
   $('auto').onchange = e => { settings.autoSpeak = e.target.checked; saveSettings(); };
   $('voice').onchange = e => { settings.voice = e.target.value; saveSettings(); };
   $('lja').onchange = e => { settings.listenJa = e.target.checked; saveSettings(); };
