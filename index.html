@@ -129,8 +129,9 @@ let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
 
-const VERSION = '1.14'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.15'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.15', d: '2026-11-02', items: ['通し聞きの2回目は1.25倍、3回目は1.5倍の速さで英文を読むようにした'] },
   { v: '1.14', d: '2026-11-02', items: ['音声の zip に和訳の MP3（ja/ フォルダ）があれば、通し聞きの和訳をその音声で読むようにした（マナーモードでも聞こえる）'] },
   { v: '1.13', d: '2026-11-02', items: ['通し聞きの再生・停止を1つのボタンにした（停止中はオレンジ、再生中は緑）', '通し聞きに英文の回数ボタン（1x・2x・3x）を付けた。2回以上は間に3秒あける'] },
   { v: '1.12', d: '2026-11-02', items: ['穴埋めを入力・採点式にした（間違えた所は赤い下線で入れ直す）', '穴埋めで「答えを見る」の後に「答えを隠す」で入力に戻れるようにした'] },
@@ -236,11 +237,11 @@ const synth = window.speechSynthesis;
 let voices = [];
 function loadVoices() { voices = synth ? synth.getVoices() : []; }
 if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
-function speak(text, lang = 'en', onend) {
+function speak(text, lang = 'en', onend, speed = 1) {
   if (!synth) { onend && onend(); return; }
   const u = new SpeechSynthesisUtterance(text);
   if (lang === 'en') {
-    u.lang = 'en-US'; u.rate = settings.rate;
+    u.lang = 'en-US'; u.rate = settings.rate * speed;
     const v = voices.find(v => v.voiceURI === settings.voice);
     if (v) u.voice = v;
   } else { u.lang = 'ja-JP'; u.rate = 1; }
@@ -264,10 +265,11 @@ async function loadAudio() {
   audioUrls.forEach(u => URL.revokeObjectURL(u));
   audioUrls = new Map(keys.map((k, n) => [k, URL.createObjectURL(new Blob([blobs[n]], { type: 'audio/mpeg' }))]));
 }
-function sayEn(it, onend) {
+// speed は「英文の速さ」に掛ける倍率（通し聞きの2回目・3回目で使う）
+function sayEn(it, onend, speed = 1) {
   const url = audioUrls.get(parseInt(it.no, 10));
-  if (!url) { speak(plain(it.en), 'en', onend); return; }
-  playMp3(url, settings.rate, onend);
+  if (!url) { speak(plain(it.en), 'en', onend, speed); return; }
+  playMp3(url, settings.rate * speed, onend);
 }
 // 和訳の MP3 は zip の ja/ フォルダから取り込み、"ja:番号" で保存する
 function sayJa(it, onend) {
@@ -576,7 +578,7 @@ function showListen(sec) {
     <div class="tools" id="lrep" style="margin:14px 0 0">${[1, 2, 3].map(n =>
       `<button data-n="${n}" class="${n === settings.listenRepeat ? 'on' : ''}">${n}x</button>`).join('')}</div>
     <div class="nav"><button class="playbtn" id="play"></button></div>
-    <p class="note">ボタンを押すたびに再生と停止が切り替わります。1x〜3x は英文を読む回数で、2回以上のときは間に3秒あけます。日本語の読み上げは設定で切り替えられます。</p>`;
+    <p class="note">ボタンを押すたびに再生と停止が切り替わります。1x〜3x は英文を読む回数です。2回目は1.25倍、3回目は1.5倍の速さで、間に3秒あけます。日本語の読み上げは設定で切り替えられます。</p>`;
   const btn = document.getElementById('play');
   const setPlaying = on => { btn.classList.toggle('on', on); btn.textContent = on ? '▶ 再生中' : '■ 停止中'; };
   setPlaying(false);
@@ -605,7 +607,7 @@ function showListen(sec) {
       let done = 0; // 回数は再生中に変えても次の読みから効く
       const en = () => listenRun === run && sayEn(it, () => {
         if (++done < settings.listenRepeat) setTimeout(en, 3000); else { k++; setTimeout(step, 900); }
-      });
+      }, [1, 1.25, 1.5][done]);
       settings.listenJa ? sayJa(it, () => setTimeout(en, 300)) : en();
     };
     step();
