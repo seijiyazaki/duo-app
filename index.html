@@ -231,19 +231,21 @@ function speak(text, lang = 'en', onend) {
   if (onend) { u.onend = onend; u.onerror = onend; }
   synth.speak(u);
 }
-const stopSpeak = () => {
-  listenRun = null; synth && synth.cancel(); player.pause();
-  if (recog) {
-    const r = recog; recog = null; r.abort();
-    const b = document.getElementById('mic'); if (b) b.textContent = '🎤 話す';
-  }
-};
+const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); stopListening(); };
 
 // 音声入力（英語）。使えない環境では 🎤 ボタンを出さない
 // iPhone は認識器を毎回作り直すと2回目から動かないことがあるので、1つ（recognizer）を使い回す。
 // recog は聞き取り中だけ recognizer を指す。終わりの合図（onend）が来ないこともあるので、それに頼らず止める
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognizer = null, recog = null;
+let recognizer = null, recog = null, quietTimer = 0;
+function stopListening() {
+  clearTimeout(quietTimer);
+  if (!recog) return;
+  const r = recog; recog = null;
+  try { r.stop(); } catch (e) {}
+  const b = document.getElementById('mic'); if (b) b.textContent = '🎤 話す';
+}
+const quietLater = ms => { clearTimeout(quietTimer); quietTimer = setTimeout(stopListening, ms); };
 
 // 例文の MP3: zip から取り込んで IndexedDB に例文番号で保存する。ないときは読み上げ機能を使う
 const player = new Audio();
@@ -467,41 +469,43 @@ function startStudy(sec, m) {
       const first = fill.querySelector('input'); first && first.focus();
     };
     // 話した英文を入れる。穴埋めのときは、話した語のうち空欄の答えと合う語だけを空欄に入れる
+    // iPhone は話し終えても聞き取りを続けることがあるので、1文を聞き終えたか、少し黙ったら自分で止める
     const listen = () => {
-      if (recog) { stopSpeak(); return; }
+      if (recog) { stopListening(); return; }
       stopSpeak();
       const fillMode = !$('fill').hidden, base = $('typed').value.trim();
-      const setup = r => {
-        r.lang = 'en-US'; r.interimResults = true; r.continuous = false;
-        const done = () => { recog = null; const b = $('mic'); if (b) b.textContent = '🎤 話す'; };
-        r.onresult = e => {
-          if (recog !== r || !document.body.contains(tap)) return;
-          const said = [...e.results].map(x => x[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
-          if (!fillMode) $('typed').value = (base ? base + ' ' : '') + said;
-          else {
-            const ins = [...$('fill').querySelectorAll('input')];
-            matched(ins.map(el => toks[el.dataset.k].n), said.split(/\s+/).map(norm).filter(Boolean))
-              .forEach(j => { ins[j].value = toks[ins[j].dataset.k].core; });
-            $('msg').textContent = `聞き取り: ${said}`;
-          }
-          if (e.results[e.results.length - 1].isFinal) done(); // 1文を聞き終えた
-        };
-        r.onerror = e => {
-          if (recog !== r || ['aborted', 'no-speech'].includes(e.error)) return;
-          const hint = ['not-allowed', 'service-not-allowed'].includes(e.error) ? '。マイクと音声認識の許可、Siri と音声入力の設定を確認してください' : '';
-          toast(`音声入力できませんでした（${e.error}）${hint}`, 6000);
-        };
-        r.onend = () => { if (recog === r) done(); };
-        r.start(); recog = r;
+      const r = recognizer || (recognizer = new SR());
+      r.lang = 'en-US'; r.interimResults = true; r.continuous = false;
+      r.onresult = e => {
+        if (recog !== r || !document.body.contains(tap)) return;
+        const said = [...e.results].map(x => x[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
+        if (!fillMode) $('typed').value = (base ? base + ' ' : '') + said;
+        else {
+          const ins = [...$('fill').querySelectorAll('input')];
+          matched(ins.map(el => toks[el.dataset.k].n), said.split(/\s+/).map(norm).filter(Boolean))
+            .forEach(j => { ins[j].value = toks[ins[j].dataset.k].core; });
+          $('msg').textContent = `聞き取り: ${said}`;
+        }
+        if (e.results[e.results.length - 1].isFinal) stopListening();
+        else quietLater(1500);
       };
-      try { setup(recognizer || (recognizer = new SR())); } catch (err) {
-        // 前の聞き取りがまだ終わっていないときは、新しい認識器で始め直す
-        try { setup(recognizer = new SR()); } catch (err2) { toast(`音声入力できませんでした（${err2.name}）`, 5000); return; }
+      r.onerror = e => {
+        if (recog !== r || ['aborted', 'no-speech'].includes(e.error)) return;
+        const hint = ['not-allowed', 'service-not-allowed'].includes(e.error) ? '。マイクと音声認識の許可、Siri と音声入力の設定を確認してください' : '';
+        toast(`音声入力できませんでした（${e.error}）${hint}`, 6000);
+      };
+      r.onend = () => { if (recog === r) stopListening(); };
+      try { r.start(); } catch (err) {
+        try { r.abort(); } catch (e) {}
+        toast(`音声入力を始められませんでした（${err.name}）。少し待ってからもう一度押してください`, 5000);
+        return;
       }
+      recog = r;
+      quietLater(8000); // 何も聞こえないまま続くときも止める
       $('mic').textContent = '■ 止める';
     };
     const submit = () => {
-      if (recog) stopSpeak();
+      stopListening();
       tries++;
       if (tries === 1) {
         const sameLen = firstTry();
@@ -536,7 +540,7 @@ function startStudy(sec, m) {
       else ($('fill').hidden ? $('typed') : $('fill').querySelector('input')).focus();
     };
     if ($('mic')) $('mic').onclick = listen;
-    $('typed').oninput = () => { if (recog) stopSpeak(); }; // 手で打ち始めたら聞き取りを止める
+    $('typed').oninput = () => { if (recog) stopListening(); }; // 手で打ち始めたら聞き取りを止める
     $('typed').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
     $('typed').focus();
   }
