@@ -54,6 +54,12 @@ button:disabled { opacity: .4; }
 .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 6px; }
 .bar i { display: block; height: 100%; background: var(--good); }
 .weakc { color: var(--weak); font-size: 13px; font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.grid .row { flex-direction: column; align-items: stretch; gap: 4px; padding: 10px; }
+.grid .row .t { min-width: 0; font-size: 14px; }
+.grid .row .s, .grid .weakc { font-size: 12px; }
+.grid .bar { display: block; }
+.grid .row[data-s="all"] { grid-column: 1 / -1; }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 18px;
   min-height: 260px; display: flex; flex-direction: column; gap: 14px;
@@ -320,7 +326,7 @@ function showHome() {
       <button id="weakBtn" ${mode === 'listen' || !weakN ? 'disabled' : ''}>苦手だけ復習 (${weakN})</button>
       <button id="shufBtn" class="${settings.shuffle ? 'on' : ''}">シャッフル ${settings.shuffle ? 'オン' : 'オフ'}</button>
     </div>
-    <div class="list">${[...sections(), 'all'].map(sec => {
+    <div class="grid">${[...sections(), 'all'].map(sec => {
       const m = mode === 'listen' ? 'sentence' : mode;
       const cs = cardsFor(sec, m);
       const seen = cs.filter(c => prog.seen[c.key]).length;
@@ -429,7 +435,19 @@ function startStudy(sec, m) {
         style="width:calc(${x.core.length}ch + 12px)" placeholder="${esc(x.core[0] || '')}"
         autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go">${esc(x.post)}`).join(' ');
       fill.hidden = false; $('typed').hidden = true;
-      fill.querySelectorAll('input').forEach(el => el.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } });
+      // スペースで次の空欄へ、空欄が空のときの削除で前の空欄へ移る
+      const ins = [...fill.querySelectorAll('input')];
+      ins.forEach((el, n) => {
+        el.onkeydown = e => {
+          if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); }
+          else if (e.key === 'Backspace' && !el.value && n > 0) { e.preventDefault(); ins[n - 1].focus(); }
+        };
+        el.oninput = e => {
+          if (e.isComposing || !/\s/.test(el.value)) return;
+          el.value = el.value.replace(/\s+/g, '');
+          if (ins[n + 1]) ins[n + 1].focus();
+        };
+      });
       const first = fill.querySelector('input'); first && first.focus();
     };
     const submit = () => {
