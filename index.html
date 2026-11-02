@@ -200,8 +200,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.16'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.17'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.17', d: '2026-11-02', items: ['設定に「デイリータスクを初期化」を追加（サイクル1の最初に戻し、スケジュール表の記録も消す）'] },
   { v: '1.16', d: '2026-11-02', items: ['ホームをデイリータスク中心にした（1日1 Section、穴埋め→和訳→英文の順。45日で1サイクル）', 'スケジュール表を追加（日ごとの学習時間とSection、カレンダー、完了予定日）。進み具合はここで変えられる', '画面ごとに海や山の背景を付けた', '今までのセクション一覧は「自由学習」に移した'] },
   { v: '1.15', d: '2026-11-02', items: ['通し聞きの2回目は1.25倍、3回目は1.5倍の速さで英文を読むようにした'] },
   { v: '1.14', d: '2026-11-02', items: ['音声の zip に和訳の MP3（ja/ フォルダ）があれば、通し聞きの和訳をその音声で読むようにした（マナーモードでも聞こえる）'] },
@@ -938,6 +939,12 @@ function showSettings() {
     <p class="note">データと進み具合はこの iPhone の Safari 内だけに保存されます。機種変更前はバックアップを書き出してください。
       書き出したファイルは上の欄に貼れば元に戻せます。</p>
 
+    <h2>デイリータスク</h2>
+    <p class="note">いまはサイクル ${sched.cycle} · Day ${sched.idx + 1}（Section ${curSec() ?? '-'} の${PHASES[sched.phase]}）。
+      初期化すると、サイクル 1 の Section ${sections()[0] ?? 1} の穴埋めから始め直し、スケジュール表の学習時間と完了の記録もすべて消します。
+      苦手の印と自由学習の進み具合は消えません。</p>
+    <div class="tools"><button id="resetD" style="color:var(--weak)">デイリータスクを初期化</button></div>
+
     <h2>このアプリについて</h2>
     <div class="tools"><button id="log">Change log</button></div>
     <p class="note">ver${VERSION}</p></div>`;
@@ -954,6 +961,10 @@ function showSettings() {
   $('audioIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importAudio(f); };
   $('exp').onclick = exportBackup;
   $('log').onclick = showChangelog;
+  $('resetD').onclick = () => {
+    if (!confirm('デイリータスクの進み具合と、スケジュール表の学習時間・完了の記録をすべて消して、サイクル 1 の最初から始め直します。よろしいですか？')) return;
+    unsaved = 0; sched = newSched(); saveSched(); toast('デイリータスクを初期化しました'); showSettings();
+  };
   $('resetP').onclick = () => {
     if (!confirm('苦手の印と進み具合をすべて消します。よろしいですか？')) return;
     prog = { weak: {}, seen: {}, pos: {} }; saveProg(); toast('リセットしました');
