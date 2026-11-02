@@ -128,6 +128,20 @@ let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
 
+const VERSION = '1.11'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const CHANGELOG = [
+  { v: '1.11', d: '2026-11-02', items: ['ホームの見出しにバージョンを表示', '設定から Change log を見られるようにした', '音声入力（🎤 話す）を取り除いた'] },
+  { v: '1.10', d: '2026-11-02', items: ['音声入力: 1文を聞き終えるか黙ったら聞き取りを止めるようにした'] },
+  { v: '1.09', d: '2026-11-02', items: ['音声入力: 2回目以降も使えるように直した'] },
+  { v: '1.08', d: '2026-11-02', items: ['「答えを見る」をもう一度押すと答えを隠して入力に戻るようにした', '音声入力（🎤 話す）を追加'] },
+  { v: '1.07', d: '2026-11-02', items: ['ホームの一覧を3列に並べた', '穴埋めの空欄をスペースで次へ、削除で前へ移れるようにした'] },
+  { v: '1.06', d: '2026-11-02', items: ['一覧の最後に ALL を追加', '出題順のシャッフルを追加'] },
+  { v: '1.05', d: '2026-11-02', items: ['iPhone で音声の zip を取り込めなかったのを直した', '取り込み・再生に失敗したときに理由を表示'] },
+  { v: '1.04', d: '2026-11-02', items: ['例文 MP3 の zip 取り込みと、MP3 での英文再生を追加'] },
+  { v: '1.03', d: '2026-11-02', items: ['和訳→英文で英文を入力して採点し、間違えた語だけ穴埋めで出し直すようにした'] },
+  { v: '1.02', d: '2026-10-31', items: ['見出し語の列「見出し語=意味」の形式に対応'] },
+  { v: '1.01', d: '2026-10-31', items: ['最初の版（和訳→英文、単語カード、穴埋め、通し聞き）'] }
+];
 const MODES = { sentence: '和訳→英文', word: '単語カード', cloze: '穴埋め', listen: '通し聞き' };
 
 // ---------- データ ----------
@@ -231,21 +245,7 @@ function speak(text, lang = 'en', onend) {
   if (onend) { u.onend = onend; u.onerror = onend; }
   synth.speak(u);
 }
-const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); stopListening(); };
-
-// 音声入力（英語）。使えない環境では 🎤 ボタンを出さない
-// iPhone は認識器を毎回作り直すと2回目から動かないことがあるので、1つ（recognizer）を使い回す。
-// recog は聞き取り中だけ recognizer を指す。終わりの合図（onend）が来ないこともあるので、それに頼らず止める
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognizer = null, recog = null, quietTimer = 0;
-function stopListening() {
-  clearTimeout(quietTimer);
-  if (!recog) return;
-  const r = recog; recog = null;
-  try { r.stop(); } catch (e) {}
-  const b = document.getElementById('mic'); if (b) b.textContent = '🎤 話す';
-}
-const quietLater = ms => { clearTimeout(quietTimer); quietTimer = setTimeout(stopListening, ms); };
+const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); };
 
 // 例文の MP3: zip から取り込んで IndexedDB に例文番号で保存する。ないときは読み上げ機能を使う
 const player = new Audio();
@@ -328,7 +328,7 @@ function toast(msg, ms = 1800) {
 }
 
 function showHome() {
-  setHeader('DUO暗記', null);
+  setHeader(`DUO暗記 ver${VERSION}`, null);
   if (!items.length) {
     app.innerHTML = `<div class="empty">まだ例文がありません。<br>右上の「設定」から CSV を取り込んでください。<br><br>
       <button class="primary" id="go">データを取り込む</button></div>`;
@@ -398,10 +398,10 @@ function startStudy(sec, m) {
         ${m === 'sentence' ? `<div class="typing" id="tap">
           <div class="typing" id="inputs">
             <div class="prompt en fill" id="fill" hidden></div>
-            <textarea id="typed" class="en" placeholder="英文を入力${SR ? '（🎤 で話しても入力できます）' : ''}" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+            <textarea id="typed" class="en" placeholder="英文を入力" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
             <div class="msg" id="msg"></div>
           </div>
-          <div class="nav"><button id="giveup">答えを見る</button>${SR ? '<button id="mic">🎤 話す</button>' : ''}<button class="primary" id="submit">Submit</button></div>
+          <div class="nav"><button id="giveup">答えを見る</button><button class="primary" id="submit">Submit</button></div>
         </div>` : '<div class="tapzone" id="tap">タップで答えを表示</div>'}
         <div class="answer hidden" id="ans">${answer}</div>
       </div>
@@ -468,44 +468,7 @@ function startStudy(sec, m) {
       });
       const first = fill.querySelector('input'); first && first.focus();
     };
-    // 話した英文を入れる。穴埋めのときは、話した語のうち空欄の答えと合う語だけを空欄に入れる
-    // iPhone は話し終えても聞き取りを続けることがあるので、1文を聞き終えたか、少し黙ったら自分で止める
-    const listen = () => {
-      if (recog) { stopListening(); return; }
-      stopSpeak();
-      const fillMode = !$('fill').hidden, base = $('typed').value.trim();
-      const r = recognizer || (recognizer = new SR());
-      r.lang = 'en-US'; r.interimResults = true; r.continuous = false;
-      r.onresult = e => {
-        if (recog !== r || !document.body.contains(tap)) return;
-        const said = [...e.results].map(x => x[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
-        if (!fillMode) $('typed').value = (base ? base + ' ' : '') + said;
-        else {
-          const ins = [...$('fill').querySelectorAll('input')];
-          matched(ins.map(el => toks[el.dataset.k].n), said.split(/\s+/).map(norm).filter(Boolean))
-            .forEach(j => { ins[j].value = toks[ins[j].dataset.k].core; });
-          $('msg').textContent = `聞き取り: ${said}`;
-        }
-        if (e.results[e.results.length - 1].isFinal) stopListening();
-        else quietLater(1500);
-      };
-      r.onerror = e => {
-        if (recog !== r || ['aborted', 'no-speech'].includes(e.error)) return;
-        const hint = ['not-allowed', 'service-not-allowed'].includes(e.error) ? '。マイクと音声認識の許可、Siri と音声入力の設定を確認してください' : '';
-        toast(`音声入力できませんでした（${e.error}）${hint}`, 6000);
-      };
-      r.onend = () => { if (recog === r) stopListening(); };
-      try { r.start(); } catch (err) {
-        try { r.abort(); } catch (e) {}
-        toast(`音声入力を始められませんでした（${err.name}）。少し待ってからもう一度押してください`, 5000);
-        return;
-      }
-      recog = r;
-      quietLater(8000); // 何も聞こえないまま続くときも止める
-      $('mic').textContent = '■ 止める';
-    };
     const submit = () => {
-      stopListening();
       tries++;
       if (tries === 1) {
         const sameLen = firstTry();
@@ -534,13 +497,11 @@ function startStudy(sec, m) {
       revealed = !revealed;
       stopSpeak();
       $('ans').classList.toggle('hidden', !revealed);
-      [$('inputs'), $('submit'), $('mic')].forEach(el => { if (el) el.hidden = revealed; });
+      [$('inputs'), $('submit')].forEach(el => { if (el) el.hidden = revealed; });
       $('giveup').textContent = revealed ? '答えを隠す' : '答えを見る';
       if (revealed) { if (settings.autoSpeak) sayEn(c.it); }
       else ($('fill').hidden ? $('typed') : $('fill').querySelector('input')).focus();
     };
-    if ($('mic')) $('mic').onclick = listen;
-    $('typed').oninput = () => { if (recog) stopListening(); }; // 手で打ち始めたら聞き取りを止める
     $('typed').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
     $('typed').focus();
   }
@@ -665,7 +626,11 @@ function showSettings() {
       <button id="resetP">進み具合をリセット</button>
     </div>
     <p class="note">データと進み具合はこの iPhone の Safari 内だけに保存されます。機種変更前はバックアップを書き出してください。
-      書き出したファイルは上の欄に貼れば元に戻せます。</p>`;
+      書き出したファイルは上の欄に貼れば元に戻せます。</p>
+
+    <h2>このアプリについて</h2>
+    <div class="tools"><button id="log">Change log</button></div>
+    <p class="note">ver${VERSION}</p>`;
   const $ = id => document.getElementById(id);
   $('rate').oninput = e => { settings.rate = +e.target.value; saveSettings(); };
   $('auto').onchange = e => { settings.autoSpeak = e.target.checked; saveSettings(); };
@@ -679,10 +644,18 @@ function showSettings() {
   $('audioBtn').onclick = () => $('audioIn').click();
   $('audioIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importAudio(f); };
   $('exp').onclick = exportBackup;
+  $('log').onclick = showChangelog;
   $('resetP').onclick = () => {
     if (!confirm('苦手の印と進み具合をすべて消します。よろしいですか？')) return;
     prog = { weak: {}, seen: {}, pos: {} }; saveProg(); toast('リセットしました');
   };
+}
+
+function showChangelog() {
+  setHeader('Change log', showSettings);
+  app.innerHTML = CHANGELOG.map(c => `<h2>ver${c.v} <span class="note">${c.d}</span></h2>
+    <ul class="note">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
+  window.scrollTo(0, 0);
 }
 
 function importText(text) {
