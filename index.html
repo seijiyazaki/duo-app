@@ -129,8 +129,9 @@ let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
 
-const VERSION = '1.13'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.14'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.14', d: '2026-11-02', items: ['音声の zip に和訳の MP3（ja/ フォルダ）があれば、通し聞きの和訳をその音声で読むようにした（マナーモードでも聞こえる）'] },
   { v: '1.13', d: '2026-11-02', items: ['通し聞きの再生・停止を1つのボタンにした（停止中はオレンジ、再生中は緑）', '通し聞きに英文の回数ボタン（1x・2x・3x）を付けた。2回以上は間に3秒あける'] },
   { v: '1.12', d: '2026-11-02', items: ['穴埋めを入力・採点式にした（間違えた所は赤い下線で入れ直す）', '穴埋めで「答えを見る」の後に「答えを隠す」で入力に戻れるようにした'] },
   { v: '1.11', d: '2026-11-02', items: ['ホームの見出しにバージョンを表示', '設定から Change log を見られるようにした', '音声入力（🎤 話す）を取り除いた'] },
@@ -266,9 +267,18 @@ async function loadAudio() {
 function sayEn(it, onend) {
   const url = audioUrls.get(parseInt(it.no, 10));
   if (!url) { speak(plain(it.en), 'en', onend); return; }
+  playMp3(url, settings.rate, onend);
+}
+// 和訳の MP3 は zip の ja/ フォルダから取り込み、"ja:番号" で保存する
+function sayJa(it, onend) {
+  const url = audioUrls.get(`ja:${parseInt(it.no, 10)}`);
+  if (!url) { speak(it.ja, 'ja', onend); return; }
+  playMp3(url, 1, onend);
+}
+function playMp3(url, rate, onend) {
   player.onended = player.onerror = onend || null;
   player.src = url;
-  player.defaultPlaybackRate = player.playbackRate = settings.rate;
+  player.defaultPlaybackRate = player.playbackRate = rate;
   player.play().catch(err => {
     if (onend) onend();
     else if (err.name !== 'AbortError') toast(`再生できませんでした（${err.name}）`, 5000);
@@ -296,19 +306,20 @@ async function unzip(file) {
   return out;
 }
 
+const audioCount = () => { const ja = [...audioUrls.keys()].filter(k => typeof k === 'string').length; return `英文 ${audioUrls.size - ja} 文・和訳 ${ja} 文`; };
 async function importAudio(file) {
   toast('音声を読み込んでいます…');
   try {
-    const mp3 = (await unzip(file)).map(f => ({ ...f, no: (f.name.match(/(?:^|\/)(\d+)\.mp3$/i) || [])[1] }))
+    const mp3 = (await unzip(file)).map(f => ({ ...f, no: (f.name.match(/(?:^|\/)(\d+)\.mp3$/i) || [])[1], ja: /(?:^|\/)ja\/\d+\.mp3$/i.test(f.name) }))
       .filter(f => f.no && !/(^|\/)(__MACOSX|\._)/.test(f.name));
     if (!mp3.length) { toast('MP3 が見つかりませんでした'); return; }
     const tx = (await audioDB()).transaction('mp3', 'readwrite');
     const st = tx.objectStore('mp3');
     st.clear();
-    mp3.forEach(f => st.put(f.buf, parseInt(f.no, 10)));
+    mp3.forEach(f => st.put(f.buf, f.ja ? `ja:${parseInt(f.no, 10)}` : parseInt(f.no, 10)));
     await new Promise((ok, ng) => { tx.oncomplete = ok; tx.onerror = () => ng(tx.error); });
     await loadAudio();
-    toast(`${audioUrls.size} 文の音声を取り込みました`); showSettings();
+    toast(`${audioCount()} の音声を取り込みました`); showSettings();
   } catch (err) { toast(`音声を取り込めませんでした（${err.name}: ${err.message}）`, 8000); }
 }
 
@@ -579,9 +590,9 @@ function showListen(sec) {
     const run = listenRun = {};
     setPlaying(true);
     let k = 0;
-    // iPhone は最初の MP3 再生をボタン操作の中で行わないと、あとの再生を止める。和訳から読むときは無音で一度鳴らしておく
+    // iPhone は最初の MP3 再生をボタン操作の中で行わないと、あとの再生を止める。和訳を読み上げ機能で読むときは無音で一度鳴らしておく
     const first = audioUrls.get(parseInt(its[0].no, 10));
-    if (first && settings.listenJa) {
+    if (first && settings.listenJa && !audioUrls.get(`ja:${parseInt(its[0].no, 10)}`)) {
       player.src = first; player.muted = true;
       player.play().then(() => player.pause()).catch(() => {}).finally(() => { player.muted = false; });
     }
@@ -595,7 +606,7 @@ function showListen(sec) {
       const en = () => listenRun === run && sayEn(it, () => {
         if (++done < settings.listenRepeat) setTimeout(en, 3000); else { k++; setTimeout(step, 900); }
       });
-      settings.listenJa ? speak(it.ja, 'ja', () => setTimeout(en, 300)) : en();
+      settings.listenJa ? sayJa(it, () => setTimeout(en, 300)) : en();
     };
     step();
   };
@@ -616,10 +627,11 @@ function showSettings() {
 
     <h2>音声（MP3）</h2>
     <p class="note">例文ごとの MP3（<code>001.mp3</code> 〜 <code>560.mp3</code>）をまとめた zip を取り込むと、英文をその音声で再生します。
-      音声がない文は、これまでどおり iPhone の読み上げ機能で読みます。速さは「英文の速さ」に合わせます。</p>
+      zip の <code>ja/</code> フォルダに和訳の MP3 があれば、通し聞きの和訳もその音声で読みます。
+      音声がない文は、これまでどおり iPhone の読み上げ機能で読みます（マナーモードだと聞こえません）。英文の速さは「英文の速さ」に合わせます。</p>
     <div class="tools"><button id="audioBtn">zip を選ぶ</button></div>
     <input type="file" id="audioIn" accept=".zip,application/zip" hidden>
-    <p class="note">現在 ${audioUrls.size} 文の音声</p>
+    <p class="note">現在 ${audioCount()} の音声</p>
 
     <h2>データの取り込み</h2>
     <p class="note">1行に1例文。列は <code>セクション, 番号, 英文, 和訳, 見出し語の意味</code> の順です。
