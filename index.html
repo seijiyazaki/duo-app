@@ -12,28 +12,89 @@
 <title>DUO暗記</title>
 <style>
 :root {
-  --bg: #f4f5f7; --card: #ffffff; --text: #1b1f24; --sub: #6b7280; --line: #e3e5e8;
+  --bg: #1d3557; --card: rgba(255,255,255,.86); --solid: #ffffff; --text: #1b1f24; --sub: #5b6472; --line: rgba(27,31,36,.12);
   --accent: #1d4ed8; --accent-text: #ffffff; --good: #15803d; --weak: #c2410c; --mark: #fde68a;
+  --head: rgba(255,255,255,.55); --cta: linear-gradient(135deg, #f59e0b, #ef4444);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1115; --card: #1a1d23; --text: #e8eaed; --sub: #9aa0a6; --line: #2c3038;
+    --bg: #0f1115; --card: rgba(22,26,33,.84); --solid: #1a1d23; --text: #e8eaed; --sub: #a3aab3; --line: rgba(255,255,255,.12);
     --accent: #5b8def; --accent-text: #0f1115; --good: #4ade80; --weak: #fb923c; --mark: #713f12;
+    --head: rgba(10,12,18,.45);
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
-html, body { margin: 0; background: var(--bg); color: var(--text); }
+html { background: var(--bg); }
+html, body { margin: 0; color: var(--text); }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
   min-height: 100vh; min-height: 100dvh;
 }
+/* 画面ごとの背景（海・山の絵）。iPhone は background-attachment: fixed が効かないので固定の要素に描く */
+#bg { position: fixed; inset: 0; z-index: -1; background: var(--bg) center 70% / cover no-repeat; transition: background-image .4s; }
+#bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.05) 40%, rgba(0,0,0,.25)); }
+body[data-scene="home"] #bg { background-image: url(bg-home.svg); }
+body[data-scene="daily"] #bg { background-image: url(bg-daily.svg); }
+body[data-scene="schedule"] #bg { background-image: url(bg-schedule.svg); }
+body[data-scene="free"] #bg { background-image: url(bg-free.svg); }
+body[data-scene="settings"] #bg { background-image: url(bg-settings.svg); }
 header {
-  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  position: sticky; top: 0; z-index: 5; background: var(--head);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line);
 }
 header h1 { font-size: 17px; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 4px 16px 16px; margin-bottom: 14px; }
+main > .note { background: var(--card); border-radius: 12px; padding: 10px 12px; }
+/* ホーム */
+.hero { color: #fff; text-shadow: 0 1px 12px rgba(0,0,0,.45); padding: 18px 4px 22px; }
+.kicker { font-size: 12px; letter-spacing: .14em; font-weight: 700; opacity: .9; }
+.hero .big { font-size: 40px; font-weight: 800; margin: 6px 0 2px; letter-spacing: .01em; }
+.hero .sub { font-size: 14px; opacity: .92; }
+.steps { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: 14px; font-weight: 600; }
+.steps span { padding: 6px 12px; border-radius: 20px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); text-shadow: none; }
+.steps span.now { background: #fff; color: #1b1f24; }
+.steps span.done { background: rgba(74,222,128,.35); border-color: rgba(74,222,128,.7); }
+.cbar { height: 6px; background: rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; margin: 10px 0 4px; }
+.cbar i { display: block; height: 100%; background: #fff; border-radius: 3px; }
+button.cta { width: 100%; margin-top: 16px; padding: 18px; font-size: 18px; font-weight: 800; color: #fff; border: 0;
+  background: var(--cta); border-radius: 14px; box-shadow: 0 8px 24px rgba(239,68,68,.35); text-shadow: none; }
+button.cta small { display: block; font-size: 12px; font-weight: 600; opacity: .9; margin-top: 2px; }
+button.cta.done { background: linear-gradient(135deg, #16a34a, #0d9488); box-shadow: 0 8px 24px rgba(13,148,136,.35); }
+.ghost { width: 100%; margin-top: 10px; background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.4); text-shadow: none; }
+.wk { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 92px; margin: 10px 0 4px; }
+.wk div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; font-size: 11px; color: var(--sub); }
+.wk i { display: block; width: 70%; border-radius: 4px 4px 2px 2px; background: var(--accent); opacity: .85; }
+.wk div.today { color: var(--text); font-weight: 700; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 4px; }
+.stats div { text-align: center; }
+.stats b { display: block; font-size: 20px; }
+.stats span { font-size: 11px; color: var(--sub); }
+.panel h2 { display: flex; justify-content: space-between; align-items: baseline; }
+.panel h2 small { font-weight: 400; color: var(--sub); font-size: 12px; }
+/* スケジュール表 */
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal .dow { text-align: center; font-size: 11px; color: var(--sub); padding: 2px 0; }
+.cal .d { aspect-ratio: 1 / 1.05; border-radius: 8px; padding: 3px 4px; font-size: 11px; display: flex; flex-direction: column; justify-content: space-between; background: var(--line); }
+.cal .d.out { visibility: hidden; }
+.cal .d.today { outline: 2px solid var(--accent); }
+.cal .d .n { font-weight: 600; }
+.cal .d .m { font-size: 10px; text-align: right; font-weight: 700; }
+.cal .d.plan { background: transparent; border: 1px dashed var(--line); color: var(--sub); }
+.calnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.calnav b { font-size: 15px; }
+table.sch { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sch th { text-align: left; color: var(--sub); font-weight: 600; font-size: 11px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.sch td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sch tr.cur td { background: rgba(29,78,216,.10); }
+.sch .ok { color: var(--good); font-weight: 700; }
+.sch .now { color: var(--accent); font-weight: 700; }
+.sch .plan { color: var(--sub); }
+.sch td.r, .sch th.r { text-align: right; white-space: nowrap; }
+.sch td:last-child { white-space: nowrap; font-size: 12px; }
+.panel { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 main { padding: 16px; max-width: 640px; margin: 0 auto; }
 button {
   font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
@@ -84,7 +145,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2
 .tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .tools button { flex: 1; font-size: 14px; }
 .tools button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-.empty { text-align: center; color: var(--sub); line-height: 1.8; padding: 32px 8px; }
+.empty { text-align: center; color: var(--sub); line-height: 1.8; padding: 32px 16px; background: var(--card); border-radius: 16px; }
 textarea { width: 100%; min-height: 180px; font: 14px ui-monospace, Menlo, monospace; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
 label.field { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 select, input[type=range] { font: inherit; max-width: 60%; }
@@ -103,10 +164,11 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .playbtn { width: 100%; padding: 16px; font-size: 18px; font-weight: 700; background: var(--weak); border-color: var(--weak); color: var(--accent-text); }
 .playbtn.on { background: var(--good); border-color: var(--good); }
 .excellent { font-size: 30px; font-weight: 800; color: var(--good); text-align: center; padding: 12px 0; }
-.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 20; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--solid); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 20; }
 </style>
 </head>
-<body>
+<body data-scene="home">
+<div id="bg"></div>
 <header>
   <button class="icon" id="back" hidden aria-label="戻る">‹ 戻る</button>
   <h1 id="title">DUO暗記</h1>
@@ -129,8 +191,18 @@ let mode = store.get('duo.mode', 'sentence');
 const saveProg = () => store.set('duo.progress', prog);
 const saveSettings = () => store.set('duo.settings', settings);
 
-const VERSION = '1.15'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+// デイリータスクの進み具合と学習記録
+// idx: 今のサイクルで取り組む Section の並び順（0 始まり）、phase: cloze（穴埋め）→ sentence（和訳→英文）、pos: その中の問題番号
+// log: 日付ごとの学習時間（秒）。s は「サイクル:Section」ごと・phase ごとの秒数
+// done: 「サイクル:Section」ごとに穴埋め・和訳→英文を終えた日
+const newSched = () => ({ cycle: 1, idx: 0, phase: 'cloze', pos: 0, lastDay: '', log: {}, done: {} });
+let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
+const saveSched = () => store.set('duo.schedule', sched);
+const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
+
+const VERSION = '1.16'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.16', d: '2026-11-02', items: ['ホームをデイリータスク中心にした（1日1 Section、穴埋め→和訳→英文の順。45日で1サイクル）', 'スケジュール表を追加（日ごとの学習時間とSection、カレンダー、完了予定日）。進み具合はここで変えられる', '画面ごとに海や山の背景を付けた', '今までのセクション一覧は「自由学習」に移した'] },
   { v: '1.15', d: '2026-11-02', items: ['通し聞きの2回目は1.25倍、3回目は1.5倍の速さで英文を読むようにした'] },
   { v: '1.14', d: '2026-11-02', items: ['音声の zip に和訳の MP3（ja/ フォルダ）があれば、通し聞きの和訳をその音声で読むようにした（マナーモードでも聞こえる）'] },
   { v: '1.13', d: '2026-11-02', items: ['通し聞きの再生・停止を1つのボタンにした（停止中はオレンジ、再生中は緑）', '通し聞きに英文の回数ボタン（1x・2x・3x）を付けた。2回以上は間に3秒あける'] },
@@ -330,8 +402,9 @@ const app = document.getElementById('app');
 const titleEl = document.getElementById('title');
 const backBtn = document.getElementById('back');
 let backTo = null;
-function setHeader(title, back) {
+function setHeader(title, back, scene) {
   titleEl.textContent = title; backTo = back; backBtn.hidden = !back;
+  if (scene) document.body.dataset.scene = scene;
 }
 backBtn.onclick = () => { stopSpeak(); backTo && backTo(); };
 document.getElementById('settingsBtn').onclick = () => { stopSpeak(); showSettings(); };
@@ -341,14 +414,220 @@ function toast(msg, ms = 1800) {
   document.body.appendChild(t); setTimeout(() => t.remove(), ms);
 }
 
+// ---------- 日付と学習時間 ----------
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const WD = '日月火水木金土';
+const md = d => `${d.getMonth() + 1}/${d.getDate()}`;
+const mdw = d => `${md(d)}(${WD[d.getDay()]})`;
+const fromKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+// 秒を「1時間05分」「12分」の形にする
+const hm = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)}時間${String(m % 60).padStart(2, '0')}分` : `${m}分`; };
+const hmShort = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${(m / 60).toFixed(1)}h` : `${m}m`; };
+
+// デイリータスクの画面（#card に data-daily がある）を開いている間だけ、1秒ずつ記録する
+// 3分間なにも操作せず音も鳴っていないときは数えない
+let lastAct = Date.now(), unsaved = 0;
+['pointerdown', 'keydown', 'input'].forEach(ev => document.addEventListener(ev, () => { lastAct = Date.now(); }, true));
+setInterval(() => {
+  const card = document.getElementById('card');
+  if (!card || !card.dataset.daily || document.visibilityState !== 'visible') return;
+  const busy = !player.paused || (synth && synth.speaking);
+  if (!busy && Date.now() - lastAct > 180000) return;
+  const [key, ph] = card.dataset.daily.split('|');
+  const day = sched.log[dayKey()] || (sched.log[dayKey()] = { t: 0, s: {} });
+  const s = day.s[key] || (day.s[key] = {});
+  day.t++; s[ph] = (s[ph] || 0) + 1;
+  if (++unsaved >= 10) { unsaved = 0; saveSched(); }
+}, 1000);
+const flushTime = () => { if (unsaved) { unsaved = 0; saveSched(); } };
+document.addEventListener('visibilitychange', flushTime);
+window.addEventListener('pagehide', flushTime);
+
+const curSec = () => sections()[sched.idx];
+const secTime = (cycle, sec) => Object.values(sched.log).reduce((a, d) => a + Object.values(d.s[`${cycle}:${sec}`] || {}).reduce((x, y) => x + y, 0), 0);
+// 連続して学習した日数（今日まだなら昨日から数える）
+function streak() {
+  let d = new Date(), n = 0;
+  if (!((sched.log[dayKey(d)] || {}).t >= 60)) d = addDays(d, -1);
+  while ((sched.log[dayKey(d)] || {}).t >= 60) { n++; d = addDays(d, -1); }
+  return n;
+}
+// 今の Section を始める日。今日の分を終えていれば明日から
+const planStart = () => sched.lastDay === dayKey() ? addDays(new Date(), 1) : new Date();
+
+// ---------- ホーム ----------
 function showHome() {
-  setHeader(`DUO暗記 ver${VERSION}`, null);
+  setHeader(`DUO暗記 ver${VERSION}`, null, 'home');
   if (!items.length) {
     app.innerHTML = `<div class="empty">まだ例文がありません。<br>右上の「設定」から CSV を取り込んでください。<br><br>
       <button class="primary" id="go">データを取り込む</button></div>`;
     document.getElementById('go').onclick = showSettings;
     return;
   }
+  const secs = sections(), sec = curSec();
+  const doneToday = sched.lastDay === dayKey();
+  const n = cardsFor(sec, sched.phase).length;
+  const started = sched.pos > 0 || sched.phase === 'sentence';
+  const step = k => sched.phase === k ? 'now' : (k === 'cloze' && sched.phase === 'sentence') ? 'done' : '';
+  const finish = addDays(planStart(), secs.length - sched.idx - 1);
+  // 直近7日の学習時間
+  const week = [...Array(7)].map((_, k) => addDays(new Date(), k - 6));
+  const wt = week.map(d => (sched.log[dayKey(d)] || {}).t || 0);
+  const wmax = Math.max(1800, ...wt);
+  const todayT = wt[6];
+  app.innerHTML = `
+    <section class="hero">
+      <div class="kicker">CYCLE ${sched.cycle} · DAY ${sched.idx + 1} / ${secs.length}</div>
+      <div class="big">Section ${sec}</div>
+      <div class="sub">${doneToday ? '今日の Section は完了しました。次はこの Section です。' : `今日のタスク · ${cardsFor(sec, 'sentence').length}文`}</div>
+      <div class="cbar"><i style="width:${sched.idx / secs.length * 100}%"></i></div>
+      <div class="sub" style="font-size:12px">サイクル完了予定 ${mdw(finish)}</div>
+      <div class="steps"><span class="${step('cloze')}">① 穴埋め</span>›<span class="${step('sentence')}">② 和訳→英文</span></div>
+      <button class="cta ${doneToday ? 'done' : ''}" id="daily">${doneToday
+        ? `✓ 今日のタスク完了<small>Section ${sec} を先取りする</small>`
+        : `▶ ${started ? '続きから' : 'デイリータスクを始める'}<small>${PHASES[sched.phase]} ${Math.min(sched.pos + 1, n)} / ${n} から</small>`}</button>
+    </section>
+    <div class="panel">
+      <h2>今週の学習 <small>今日 ${hm(todayT)}</small></h2>
+      <div class="wk">${week.map((d, k) => `<div class="${k === 6 ? 'today' : ''}">
+        <i style="height:${wt[k] ? Math.max(4, wt[k] / wmax * 64) : 0}px"></i>${WD[d.getDay()]}</div>`).join('')}</div>
+      <div class="stats">
+        <div><b>${streak()}</b><span>連続日数</span></div>
+        <div><b>${hmShort(wt.reduce((a, b) => a + b, 0))}</b><span>この7日</span></div>
+        <div><b>${Object.keys(sched.done).filter(k => k.startsWith(`${sched.cycle}:`) && sched.done[k].sentence).length}</b><span>完了 Section</span></div>
+      </div>
+      <button class="primary" id="sch" style="width:100%;margin-top:10px">📅 スケジュール表を見る</button>
+    </div>
+    <button class="row" id="free"><span class="t">自由学習</span><span class="s">セクション一覧・単語カード・通し聞き・苦手の復習</span>›</button>`;
+  document.getElementById('daily').onclick = startDaily;
+  document.getElementById('sch').onclick = showSchedule;
+  document.getElementById('free').onclick = showFree;
+}
+
+// ---------- デイリータスク ----------
+function startDaily() {
+  const secs = sections(), sec = curSec(), key = `${sched.cycle}:${sec}`;
+  if (!cardsFor(sec, sched.phase).length) { phaseDone(); return; } // 穴埋めのない Section は飛ばす
+  startStudy(sec, sched.phase, {
+    key, pos: sched.pos,
+    onPos: i => { sched.pos = i; saveSched(); },
+    onDone: phaseDone
+  });
+  function phaseDone() {
+    flushTime();
+    const today = dayKey(), d = sched.done[key] || (sched.done[key] = {});
+    d[sched.phase] = today;
+    sched.pos = 0;
+    if (sched.phase === 'cloze') {
+      sched.phase = 'sentence'; saveSched();
+      return interlude('穴埋め完了！', `次は Section ${sec} の和訳→英文です。`, '▶ 和訳→英文へ進む', startDaily);
+    }
+    sched.phase = 'cloze'; sched.lastDay = today; sched.idx++;
+    let msg = `今日の学習時間 ${hm((sched.log[today] || {}).t || 0)}`;
+    if (sched.idx >= secs.length) { sched.cycle++; sched.idx = 0; msg += `<br>サイクル ${sched.cycle - 1} を終えました。サイクル ${sched.cycle} を始めます。`; }
+    saveSched();
+    interlude(`Section ${sec} 完了`, msg, '📅 スケジュール表を見る', showSchedule);
+  }
+}
+function interlude(head, msg, label, next) {
+  setHeader('今日のタスク', showHome, 'daily');
+  app.innerHTML = `<div class="empty">
+    <div style="font-size:22px;font-weight:800;color:var(--text)">${head}</div>${msg}<br><br>
+    <div class="list"><button class="primary" id="nx">${label}</button><button id="home">ホームに戻る</button></div></div>`;
+  document.getElementById('nx').onclick = next;
+  document.getElementById('home').onclick = showHome;
+}
+
+// ---------- スケジュール表 ----------
+let calMonth = null;
+function showSchedule() {
+  setHeader('スケジュール表', showHome, 'schedule');
+  const secs = sections();
+  if (!secs.length) { showHome(); return; }
+  const cyc = sched.cycle;
+  const cycT = secs.reduce((a, s) => a + secTime(cyc, s), 0);
+  const allT = Object.values(sched.log).reduce((a, d) => a + d.t, 0);
+  const days = Object.values(sched.log).filter(d => d.t >= 60).length;
+  const start = planStart();
+  const plan = new Map(); // 予定日 → Section
+  secs.forEach((s, k) => { if (k >= sched.idx) plan.set(dayKey(addDays(start, k - sched.idx)), s); });
+  const finish = addDays(start, secs.length - sched.idx - 1);
+
+  // カレンダー
+  const now = new Date();
+  if (!calMonth) calMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const first = calMonth, lead = first.getDay();
+  const nDays = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  const heat = t => t ? `background: rgba(29,120,216,${Math.min(0.9, 0.25 + t / 3600 * 0.65)}); color:#fff` : '';
+  const cells = [...Array(lead)].map(() => '<div class="d out"></div>').concat([...Array(nDays)].map((_, k) => {
+    const d = new Date(first.getFullYear(), first.getMonth(), k + 1), key = dayKey(d), log = sched.log[key];
+    const ss = log ? [...new Set(Object.keys(log.s).map(x => x.split(':')[1]))] : [];
+    const p = !log && plan.get(key);
+    return `<div class="d ${key === dayKey() ? 'today' : ''} ${p ? 'plan' : ''}" style="${heat(log && log.t)}">
+      <span class="n">${k + 1}</span><span class="m">${log && log.t ? `S${ss.join(',')}<br>${hmShort(log.t)}` : p ? `S${p}` : ''}</span></div>`;
+  }));
+
+  // Section ごとの表
+  const rows = secs.map((s, k) => {
+    const key = `${cyc}:${s}`, dn = sched.done[key] || {};
+    const dates = Object.keys(sched.log).filter(d => sched.log[d].s[key]).sort();
+    let st;
+    if (dn.sentence) st = '<span class="ok">✓ 完了</span>';
+    else if (k === sched.idx) st = `<span class="now">${PHASES[sched.phase]} ${sched.pos + 1}/${cardsFor(s, sched.phase).length}</span>`;
+    else if (k < sched.idx) st = '<span class="plan">スキップ</span>';
+    else st = `<span class="plan">予定 ${mdw(addDays(start, k - sched.idx))}</span>`;
+    return `<tr class="${k === sched.idx ? 'cur' : ''}"><td>${k + 1}</td><td>S${s}</td>
+      <td>${dates.map(d => md(fromKey(d))).join(', ') || '—'}</td><td class="r">${secTime(cyc, s) ? hm(secTime(cyc, s)) : '—'}</td><td>${st}</td></tr>`;
+  }).join('');
+
+  app.innerHTML = `
+    <div class="panel">
+      <h2>サイクル ${cyc} <small>Day ${sched.idx + 1} / ${secs.length}</small></h2>
+      <div class="cbar" style="background:var(--line)"><i style="width:${sched.idx / secs.length * 100}%;background:var(--accent)"></i></div>
+      <div class="stats">
+        <div><b>${hmShort(cycT)}</b><span>このサイクル</span></div>
+        <div><b>${days}日</b><span>学習した日</span></div>
+        <div><b>${mdw(finish)}</b><span>完了予定</span></div>
+      </div>
+      <p class="note" style="margin:6px 0 0">これまでの合計 ${hm(allT)} · 連続 ${streak()}日</p>
+    </div>
+    <div class="panel">
+      <div class="calnav" style="padding-top:12px"><button class="icon" id="pm">‹</button><b>${first.getFullYear()}年${first.getMonth() + 1}月</b><button class="icon" id="nm">›</button></div>
+      <div class="cal">${[...WD].map(w => `<div class="dow">${w}</div>`).join('')}${cells.join('')}</div>
+      <p class="note" style="margin:8px 0 0">色が濃いほど長く学習した日です。点線はこれからの予定です。</p>
+    </div>
+    <div class="panel">
+      <h2>Section ごとの記録</h2>
+      <table class="sch"><thead><tr><th>Day</th><th>Section</th><th>実施日</th><th class="r">時間</th><th>状態</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>
+    <div class="panel">
+      <h2>進み具合を変える</h2>
+      <p class="note">デイリータスクで次に始める所を選べます。記録した時間は消えません。</p>
+      <label class="field">Section <select id="jsec">${secs.map((s, k) => `<option value="${k}" ${k === sched.idx ? 'selected' : ''}>Day ${k + 1} · Section ${s}</option>`).join('')}</select></label>
+      <label class="field">内容 <select id="jph">${Object.entries(PHASES).map(([k, v]) => `<option value="${k}" ${k === sched.phase ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <div class="tools" style="margin:12px 0 0"><button class="primary" id="jgo">ここから始める</button><button id="jnew">新しいサイクルを始める</button></div>
+    </div>`;
+  const $ = id => document.getElementById(id);
+  $('pm').onclick = () => { calMonth = new Date(first.getFullYear(), first.getMonth() - 1, 1); showSchedule(); };
+  $('nm').onclick = () => { calMonth = new Date(first.getFullYear(), first.getMonth() + 1, 1); showSchedule(); };
+  $('jgo').onclick = () => {
+    sched.idx = +$('jsec').value; sched.phase = $('jph').value; sched.pos = 0; sched.lastDay = '';
+    saveSched(); toast(`Section ${curSec()} の${PHASES[sched.phase]}から始めます`); showSchedule();
+  };
+  $('jnew').onclick = () => {
+    if (!confirm(`サイクル ${cyc + 1} を Section ${secs[0]} から始めます。よろしいですか？`)) return;
+    sched.cycle++; sched.idx = 0; sched.phase = 'cloze'; sched.pos = 0; sched.lastDay = '';
+    saveSched(); showSchedule();
+  };
+  const cur = app.querySelector('tr.cur'); // 表は今の Section が見える所から
+  if (cur) cur.scrollIntoView({ block: 'nearest' });
+  window.scrollTo(0, 0);
+}
+
+// ---------- 自由学習 ----------
+function showFree() {
+  setHeader('自由学習', showHome, 'free');
   const weakN = cardsFor('weak', mode === 'listen' ? 'sentence' : mode).length;
   app.innerHTML = `
     <div class="seg">${Object.entries(MODES).map(([k, v]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${v}</button>`).join('')}</div>
@@ -368,30 +647,31 @@ function showHome() {
         ${weak ? `<span class="weakc">苦手 ${weak}</span>` : ''}
       </button>`;
     }).join('')}</div>`;
-  app.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mode = b.dataset.m; store.set('duo.mode', mode); showHome(); });
+  app.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mode = b.dataset.m; store.set('duo.mode', mode); showFree(); });
   app.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
     const sec = b.dataset.s === 'all' ? 'all' : parseInt(b.dataset.s, 10);
     mode === 'listen' ? showListen(sec) : startStudy(sec, mode);
   });
   document.getElementById('weakBtn').onclick = () => startStudy('weak', mode);
-  document.getElementById('shufBtn').onclick = () => { settings.shuffle = !settings.shuffle; saveSettings(); showHome(); };
+  document.getElementById('shufBtn').onclick = () => { settings.shuffle = !settings.shuffle; saveSettings(); showFree(); };
 }
 
 // ---------- 学習 ----------
-function startStudy(sec, m) {
+// daily を渡すとデイリータスクとして出す（並びは固定、位置は sched に保存、終わったら daily.onDone）
+function startStudy(sec, m, daily) {
   const cards = cardsFor(sec, m);
   if (!cards.length) { toast('出題できる問題がありません'); return; }
-  if (settings.shuffle) shuffle(cards);
+  if (settings.shuffle && !daily) shuffle(cards);
   const posKey = `${m}:${sec}`;
-  const keepPos = sec !== 'weak' && !settings.shuffle; // シャッフル中は毎回最初から
-  let i = keepPos ? Math.min(prog.pos[posKey] || 0, cards.length - 1) : 0;
+  const keepPos = !daily && sec !== 'weak' && !settings.shuffle; // シャッフル中は毎回最初から
+  let i = Math.min(daily ? daily.pos : keepPos ? prog.pos[posKey] || 0 : 0, cards.length - 1);
   let revealed = false;
 
   function render() {
     const c = cards[i], it = c.it;
     revealed = false;
-    const head = `${secName(sec)} · ${MODES[m]}`;
-    setHeader(head, showHome);
+    const head = daily ? `今日のタスク · ${secName(sec)} · ${MODES[m]}` : `${secName(sec)} · ${MODES[m]}`;
+    setHeader(head, daily ? showHome : showFree, daily ? 'daily' : 'free');
     let prompt, answer;
     if (m === 'sentence') {
       prompt = `<div class="prompt">${esc(it.ja)}</div>`;
@@ -405,7 +685,7 @@ function startStudy(sec, m) {
         <div class="words en">${marked(it.en)}</div><div class="words">${esc(it.ja)}</div>`;
     }
     app.innerHTML = `
-      <div class="card" id="card">
+      <div class="card" id="card" ${daily ? `data-daily="${daily.key}|${m}"` : ''}>
         <div class="meta"><span>No.${esc(it.no)} · ${i + 1} / ${cards.length}</span>
           <span>${prog.weak[c.key] ? '<span class="flag">● 苦手</span>' : ''}</span></div>
         ${prompt}
@@ -530,10 +810,11 @@ function startStudy(sec, m) {
     const n = i + d;
     if (n >= cards.length) {
       if (keepPos) { prog.pos[posKey] = 0; saveProg(); }
-      finish(); return;
+      daily ? daily.onDone() : finish(); return;
     }
     i = Math.max(0, n);
     if (keepPos) { prog.pos[posKey] = i; saveProg(); }
+    if (daily) daily.onPos(i);
     render(); window.scrollTo(0, 0);
   }
   function finish() {
@@ -555,7 +836,7 @@ function startStudy(sec, m) {
     };
     const ns = document.getElementById('nextSec');
     if (ns) ns.onclick = () => startStudy(nextSec, m);
-    document.getElementById('home').onclick = showHome;
+    document.getElementById('home').onclick = showFree;
   }
   render();
 }
@@ -570,7 +851,7 @@ let listenRun = null;
 function showListen(sec) {
   const its = sec === 'all' ? items.slice() : items.filter(i => i.section === sec);
   if (settings.shuffle) shuffle(its);
-  setHeader(`${secName(sec)} · 通し聞き`, showHome);
+  setHeader(`${secName(sec)} · 通し聞き`, showFree, 'free');
   app.innerHTML = `
     <div class="card"><div class="meta"><span id="lpos">${its.length}文</span></div>
       <div class="prompt" id="lja">再生ボタンを押すと、${settings.listenJa ? '和訳→' : ''}英文の順に読み上げます。</div>
@@ -616,9 +897,9 @@ function showListen(sec) {
 
 // ---------- 設定 ----------
 function showSettings() {
-  setHeader('設定', showHome);
+  setHeader('設定', showHome, 'settings');
   const en = voices.filter(v => v.lang && v.lang.startsWith('en'));
-  app.innerHTML = `
+  app.innerHTML = `<div class="panel">
     <h2>読み上げ</h2>
     <label class="field">英文の速さ <input type="range" id="rate" min="0.5" max="1.3" step="0.05" value="${settings.rate}"></label>
     <label class="field">答えを出したら自動で読む <input type="checkbox" id="auto" ${settings.autoSpeak ? 'checked' : ''}></label>
@@ -659,7 +940,7 @@ function showSettings() {
 
     <h2>このアプリについて</h2>
     <div class="tools"><button id="log">Change log</button></div>
-    <p class="note">ver${VERSION}</p>`;
+    <p class="note">ver${VERSION}</p></div>`;
   const $ = id => document.getElementById(id);
   $('rate').oninput = e => { settings.rate = +e.target.value; saveSettings(); };
   $('auto').onchange = e => { settings.autoSpeak = e.target.checked; saveSettings(); };
@@ -680,9 +961,9 @@ function showSettings() {
 }
 
 function showChangelog() {
-  setHeader('Change log', showSettings);
-  app.innerHTML = CHANGELOG.map(c => `<h2>ver${c.v} <span class="note">${c.d}</span></h2>
-    <ul class="note">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
+  setHeader('Change log', showSettings, 'settings');
+  app.innerHTML = `<div class="panel">${CHANGELOG.map(c => `<h2>ver${c.v} <span class="note">${c.d}</span></h2>
+    <ul class="note">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')}</div>`;
   window.scrollTo(0, 0);
 }
 
@@ -694,7 +975,8 @@ function importText(text) {
       const b = JSON.parse(text);
       if (!Array.isArray(b.items)) throw 0;
       items = b.items; prog = b.progress || prog;
-      store.set('duo.items', items); saveProg();
+      if (b.schedule) sched = Object.assign(newSched(), b.schedule);
+      store.set('duo.items', items); saveProg(); saveSched();
       toast(`${items.length} 文を復元しました`); showHome();
     } catch (e) { toast('バックアップの形式が正しくありません'); }
     return;
@@ -708,7 +990,7 @@ function importText(text) {
 
 async function exportBackup() {
   const name = `duo-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const file = new File([JSON.stringify({ items, progress: prog })], name, { type: 'application/json' });
+  const file = new File([JSON.stringify({ items, progress: prog, schedule: sched })], name, { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); } catch (e) {}
     return;

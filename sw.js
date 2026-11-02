@@ -1,6 +1,7 @@
 // オフラインでも開けるようにアプリ本体をキャッシュする
-const CACHE = 'duo-v1';
-const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
+const CACHE = 'duo-v2';
+const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png',
+  'bg-home.svg', 'bg-daily.svg', 'bg-schedule.svg', 'bg-free.svg', 'bg-settings.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
