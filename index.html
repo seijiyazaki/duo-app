@@ -13,13 +13,13 @@
 <style>
 :root {
   --bg: #1d3557; --card: rgba(255,255,255,.86); --solid: #ffffff; --text: #1b1f24; --sub: #5b6472; --line: rgba(27,31,36,.12);
-  --accent: #1d4ed8; --accent-text: #ffffff; --good: #15803d; --weak: #c2410c; --mark: #fde68a;
+  --accent: #1d4ed8; --accent-text: #ffffff; --good: #15803d; --bad: #dc2626; --weak: #c2410c; --mark: #fde68a;
   --cta: linear-gradient(135deg, #f59e0b, #ef4444);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1115; --card: rgba(22,26,33,.84); --solid: #1a1d23; --text: #e8eaed; --sub: #a3aab3; --line: rgba(255,255,255,.12);
-    --accent: #5b8def; --accent-text: #0f1115; --good: #4ade80; --weak: #fb923c; --mark: #713f12;
+    --accent: #5b8def; --accent-text: #0f1115; --good: #4ade80; --bad: #f87171; --weak: #fb923c; --mark: #713f12;
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -165,6 +165,11 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .msg { font-size: 14px; color: var(--weak); }
 .msg:empty { display: none; }
 .msg .close { display: block; font-size: 24px; font-weight: 800; color: #f59e0b; margin-bottom: 4px; animation: pop .35s ease-out; }
+.fixes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin: 8px 0 2px; font-size: 17px; }
+.fixes .fixhead { width: 100%; text-align: center; font-size: 12px; color: var(--sub); font-family: -apple-system, "Hiragino Sans", sans-serif; }
+.fixes del { color: var(--bad); text-decoration: line-through double var(--bad); }
+.fixes ins { color: var(--good); text-decoration: none; font-weight: 700; }
+.fixes .miss { color: var(--sub); font-size: 13px; }
 .nexthint { text-align: center; font-size: 13px; color: var(--sub); margin-top: 4px; }
 .card.done { cursor: pointer; }
 .playbtn { width: 100%; padding: 16px; font-size: 18px; font-weight: 700; background: var(--weak); border-color: var(--weak); color: var(--accent-text); }
@@ -226,8 +231,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.20'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.21'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.21', d: '2026-11-04', items: ['正解したあとに、間違えた所を「入力した語（赤の二重線）→ 正しい語（緑）」で表示するようにした'] },
   { v: '1.20', d: '2026-11-04', items: ['正解したあと自動で次へ進まず、カードをタップするか Enter を押すまで答えを表示したままにした', '和訳→英文で主語（we / you など）だけが違うときは「惜しい！！」と出して直せるようにした。直せば1回で正解と同じに扱う（1問につき2回まで）'] },
   { v: '1.19', d: '2026-11-02', items: ['続けて1回で正解するほど表示が10段階で上がるようにした（Good → Nice! → … → Legendary!!）。2回目以降の正解や答えを見たときは OK で、連続は0に戻る', '正解したときに音を鳴らすようにした。レベルが上がると拍手、歓声、口笛が加わり、Lv.10 はスタンディングオベーションになる（設定で切り替え。マナーモードでも鳴る）', '正解の演出を付けた。レベルが上がると、拍手の手、紙吹雪、クラッカー、花火、トロフィーが出てくる（設定で切り替え）'] },
   { v: '1.18', d: '2026-11-02', items: ['右上の「設定」ボタンを三本線のアイコンにした', '上のバーを透明にした（下にスクロールしたときだけ上をうっすら暗くする）'] },
@@ -305,15 +311,15 @@ const marked = en => esc(en).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>');
 // 入力の採点用: 大文字小文字・記号・アクセントの違いは見ない
 const norm = w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/[’‘]/g, "'").replace(/[^a-z0-9']/g, '');
-// 正解の語 a と入力の語 b の最長共通部分列を取り、合っていた a の位置を返す
+// 正解の語 a と入力の語 b の最長共通部分列を取り、合っていた a の位置 → b の位置を返す
 function matched(a, b) {
   const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
   for (let x = a.length - 1; x >= 0; x--)
     for (let y = b.length - 1; y >= 0; y--)
       dp[x][y] = a[x] === b[y] ? dp[x + 1][y + 1] + 1 : Math.max(dp[x + 1][y], dp[x][y + 1]);
-  const hit = new Set();
+  const hit = new Map();
   for (let x = 0, y = 0; x < a.length && y < b.length;) {
-    if (a[x] === b[y]) { hit.add(x); x++; y++; }
+    if (a[x] === b[y]) { hit.set(x, y); x++; y++; }
     else if (dp[x + 1][y] >= dp[x][y + 1]) x++;
     else y++;
   }
@@ -966,12 +972,25 @@ function startStudy(sec, m, daily) {
       return { t, pre, core, post, n: norm(t), b };
     });
     const ok = toks.map(x => !x.n || (cloze && !x.b)); // 記号だけの語は最初から正解扱い
+    const wrong = new Map(), extra = []; // 間違えた所: 語の位置 → 最初に入力した語（'' は抜け）、余分に入れた語
     let tries = 0, peeked = false, close = 0; // peeked: 答えを見たことがある、close: 主語だけ違って直させた回数
     const firstTry = () => {
       const want = [], at = [];
       toks.forEach((x, k) => { ok[k] = !x.n; if (x.n) { want.push(x.n); at.push(k); } });
-      const got = $('typed').value.split(/\s+/).map(norm).filter(Boolean);
-      matched(want, got).forEach(j => { ok[at[j]] = true; });
+      const raw = $('typed').value.split(/\s+/).filter(w => norm(w)), got = raw.map(norm);
+      const hit = matched(want, got);
+      hit.forEach((y, j) => { ok[at[j]] = true; });
+      // 合った語どうしの間で、合わなかった正解の語と入力の語を順に組にして、間違えた所として覚える
+      const pairs = [...hit.entries(), [want.length, got.length]];
+      let px = 0, py = 0;
+      for (const [x, y] of pairs) {
+        for (let k = 0; px + k < x || py + k < y; k++) {
+          const wx = px + k < x ? px + k : -1, gy = py + k < y ? py + k : -1;
+          if (wx >= 0) wrong.has(at[wx]) || wrong.set(at[wx], gy >= 0 ? raw[gy] : '');
+          else extra.push(raw[gy]);
+        }
+        px = x + 1; py = y + 1;
+      }
       return got.length === want.length;
     };
     const showFill = () => {
@@ -1012,11 +1031,22 @@ function startStudy(sec, m, daily) {
           return;
         }
       } else {
-        $('fill').querySelectorAll('input').forEach(el => { if (norm(el.value) === toks[el.dataset.k].n) ok[el.dataset.k] = true; });
+        $('fill').querySelectorAll('input').forEach(el => {
+          const k = +el.dataset.k;
+          if (norm(el.value) === toks[k].n) ok[k] = true;
+          else if (norm(el.value) && !wrong.has(k)) wrong.set(k, el.value.trim());
+        });
         if (ok.every(Boolean)) return excellent();
       }
       $('msg').textContent = cloze ? '赤い下線の所を直してください' : '下線の所を入力してください';
       showFill();
+    };
+    // 間違えた語を「入力（赤の二重線）→ 正解（緑）」で並べる
+    const fixes = () => {
+      const rows = [...wrong.entries()].sort((a, b) => a[0] - b[0]).map(([k, bad]) =>
+        `<span>${bad ? `<del>${esc(bad)}</del>` : '<span class="miss">（抜け）</span>'} → <ins>${esc(toks[k].core || toks[k].t)}</ins></span>`)
+        .concat(extra.map(x => `<span><del>${esc(x.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))}</del> <span class="miss">（不要）</span></span>`));
+      return rows.length ? `<div class="fixes en"><div class="fixhead">間違えた所</div>${rows.join('')}</div>` : '';
     };
     const excellent = () => {
       $('msg').textContent = '';
@@ -1029,7 +1059,7 @@ function startStudy(sec, m, daily) {
       tap.innerHTML = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}">${LEVELS[lv]}
         <small>${close && lv ? '惜しい！から正解 · ' : ''}${lv ? `${combo}問連続で正解 · Lv.${lv}` : peeked ? '答えを見て正解 · 連続は 0 から' : `${tries}回目で正解 · 連続は 0 から`}</small>
         ${lv ? `<div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>
-        <div class="nexthint">タップ（または Enter）で次へ ›</div>`;
+        ${fixes()}<div class="nexthint">タップ（または Enter）で次へ ›</div>`;
       celebrate(lv, tap.querySelector('.excellent'));
       $('ans').classList.remove('hidden');
       // 答えを見ていられるよう、自動では進まない。カードをタップするか Enter で次へ
