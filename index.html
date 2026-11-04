@@ -164,6 +164,9 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .fill input.miss { border-bottom-color: var(--weak); }
 .msg { font-size: 14px; color: var(--weak); }
 .msg:empty { display: none; }
+.msg .close { display: block; font-size: 24px; font-weight: 800; color: #f59e0b; margin-bottom: 4px; animation: pop .35s ease-out; }
+.nexthint { text-align: center; font-size: 13px; color: var(--sub); margin-top: 4px; }
+.card.done { cursor: pointer; }
 .playbtn { width: 100%; padding: 16px; font-size: 18px; font-weight: 700; background: var(--weak); border-color: var(--weak); color: var(--accent-text); }
 .playbtn.on { background: var(--good); border-color: var(--good); }
 .excellent { font-size: 30px; font-weight: 800; color: var(--good); text-align: center; padding: 12px 0; animation: pop .35s ease-out; }
@@ -223,8 +226,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.19'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.20'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.20', d: '2026-11-04', items: ['正解したあと自動で次へ進まず、カードをタップするか Enter を押すまで答えを表示したままにした', '和訳→英文で主語（we / you など）だけが違うときは「惜しい！！」と出して直せるようにした。直せば1回で正解と同じに扱う（1問につき2回まで）'] },
   { v: '1.19', d: '2026-11-02', items: ['続けて1回で正解するほど表示が10段階で上がるようにした（Good → Nice! → … → Legendary!!）。2回目以降の正解や答えを見たときは OK で、連続は0に戻る', '正解したときに音を鳴らすようにした。レベルが上がると拍手、歓声、口笛が加わり、Lv.10 はスタンディングオベーションになる（設定で切り替え。マナーモードでも鳴る）', '正解の演出を付けた。レベルが上がると、拍手の手、紙吹雪、クラッカー、花火、トロフィーが出てくる（設定で切り替え）'] },
   { v: '1.18', d: '2026-11-02', items: ['右上の「設定」ボタンを三本線のアイコンにした', '上のバーを透明にした（下にスクロールしたときだけ上をうっすら暗くする）'] },
   { v: '1.17', d: '2026-11-02', items: ['設定に「デイリータスクを初期化」を追加（サイクル1の最初に戻し、スケジュール表の記録も消す）'] },
@@ -932,6 +936,24 @@ function startStudy(sec, m, daily) {
   }
   // 和訳→英文: 入力を採点し、間違えた語だけを穴埋めにして出し直す
   // 穴埋め（cloze）: [ ] の語を最初から空欄にして採点する
+  // 日本文に主語がないと we / you などがわからないので、主語だけの違いは「惜しい！！」で直させる
+  // 代名詞（所有格・目的格も）と、主語に合わせて変わる be / have / do と三単現の s の違いだけなら、違う代名詞の位置を返す
+  function subjectOnly(want, got) {
+    if (want.length !== got.length) return null;
+    const P = new Set('i me my mine myself we us our ours ourselves you your yours yourself yourselves they them their theirs themselves he him his himself she her hers herself it its itself'.split(' '));
+    const G = { am: 'be', is: 'be', are: 'be', was: 'bep', were: 'bep', "i'm": 'pbe', "we're": 'pbe', "you're": 'pbe', "they're": 'pbe', "he's": 'pbe', "she's": 'pbe', "it's": 'pbe',
+      has: 'have', have: 'have', does: 'do', do: 'do', "doesn't": 'dont', "don't": 'dont', "isn't": 'aint', "aren't": 'aint', "wasn't": 'werent', "weren't": 'werent' };
+    const diffs = [];
+    for (let k = 0; k < want.length; k++) {
+      const a = want[k], b = got[k];
+      if (a === b) continue;
+      if (P.has(a) && P.has(b)) { diffs.push(k); continue; }
+      if (G[a] && G[a] === G[b]) continue;
+      if (k > 0 && diffs.includes(k - 1) && a.replace(/e?s$/, '') === b.replace(/e?s$/, '')) continue; // He respects / We respect
+      return null;
+    }
+    return diffs.length ? diffs : null;
+  }
   function typing(c, cloze) {
     const $ = id => document.getElementById(id);
     const tap = $('tap');
@@ -944,7 +966,7 @@ function startStudy(sec, m, daily) {
       return { t, pre, core, post, n: norm(t), b };
     });
     const ok = toks.map(x => !x.n || (cloze && !x.b)); // 記号だけの語は最初から正解扱い
-    let tries = 0, peeked = false; // peeked: 答えを見たことがある
+    let tries = 0, peeked = false, close = 0; // peeked: 答えを見たことがある、close: 主語だけ違って直させた回数
     const firstTry = () => {
       const want = [], at = [];
       toks.forEach((x, k) => { ok[k] = !x.n; if (x.n) { want.push(x.n); at.push(k); } });
@@ -981,6 +1003,14 @@ function startStudy(sec, m, daily) {
           if (sameLen) return excellent();
           tries = 0; $('msg').textContent = '余分な語が入っています'; return;
         }
+        const raw = $('typed').value.split(/\s+/).filter(w => norm(w));
+        const diffs = close < 2 && subjectOnly(toks.filter(x => x.n).map(x => x.n), raw.map(norm));
+        if (diffs) { // 1回目の入力としてやり直せる（直せば1回で正解と同じに扱う）
+          close++; tries = 0;
+          $('msg').innerHTML = `<b class="close">惜しい！！</b>主語が違います。${diffs.map(k => `「${esc(raw[k])}」`).join('')}を直して、もう一度 Submit してください。`;
+          $('typed').focus();
+          return;
+        }
       } else {
         $('fill').querySelectorAll('input').forEach(el => { if (norm(el.value) === toks[el.dataset.k].n) ok[el.dataset.k] = true; });
         if (ok.every(Boolean)) return excellent();
@@ -989,6 +1019,7 @@ function startStudy(sec, m, daily) {
       showFill();
     };
     const excellent = () => {
+      $('msg').textContent = '';
       if (tries === 1 && !peeked) delete prog.weak[c.key]; else prog.weak[c.key] = true;
       mark(c);
       revealed = true;
@@ -996,12 +1027,24 @@ function startStudy(sec, m, daily) {
       const lv = Math.min(combo, 10);
       chime(lv);
       tap.innerHTML = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}">${LEVELS[lv]}
-        <small>${lv ? `${combo}問連続で正解 · Lv.${lv}` : peeked ? '答えを見て正解 · 連続は 0 から' : `${tries}回目で正解 · 連続は 0 から`}</small>
-        ${lv ? `<div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>`;
+        <small>${close && lv ? '惜しい！から正解 · ' : ''}${lv ? `${combo}問連続で正解 · Lv.${lv}` : peeked ? '答えを見て正解 · 連続は 0 から' : `${tries}回目で正解 · 連続は 0 から`}</small>
+        ${lv ? `<div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>
+        <div class="nexthint">タップ（または Enter）で次へ ›</div>`;
       celebrate(lv, tap.querySelector('.excellent'));
       $('ans').classList.remove('hidden');
-      // 歓声が大きいレベルほど、少し長く余韻を見せてから次へ
-      setTimeout(() => { if (cards[i] === c && document.body.contains(tap)) go(1); }, lv >= 10 ? 2600 : lv >= 7 ? 1800 : 1200);
+      // 答えを見ていられるよう、自動では進まない。カードをタップするか Enter で次へ
+      // （Submit を押したクリックや Enter がそのまま届かないよう、次の番で受け付ける）
+      setTimeout(() => {
+        const card = $('card');
+        if (!card || cards[i] !== c) return;
+        const next = () => { document.removeEventListener('keydown', onKey); if (cards[i] === c && document.body.contains(card)) go(1); };
+        const onKey = e => {
+          if (!document.body.contains(card)) { document.removeEventListener('keydown', onKey); return; }
+          if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); next(); }
+        };
+        card.onclick = next; card.classList.add('done');
+        document.addEventListener('keydown', onKey);
+      }, 0);
     };
     $('submit').onclick = submit;
     // 答えを見る／隠すを切り替える。隠すと入力に戻る
