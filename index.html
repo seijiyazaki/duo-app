@@ -234,8 +234,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.23'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.24'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.24', d: '2026-11-05', items: ['単語カードを入力・採点式にした。日本語の意味を見て見出し語を入力する。look at のように2語以上のものは語の数だけ入力欄を出す（A・B・... などはそのまま表示）', '単語カードも、続けて1回で正解すると10段階で上がる表示・音・演出が出る。1文字のつづり違いは「スペルが少し違うよ！」で直せる', '単語カードの 🔊 は、答えがわかってしまわないよう、答えのあとだけ見出し語を読む'] },
   { v: '1.23', d: '2026-11-04', items: ['パソコンのブラウザでブックマークやタブにアイコンが出るように favicon を付けた'] },
   { v: '1.22', d: '2026-11-04', items: ['4文字以上の語で1文字だけつづりが違うときは、間違いにせず「スペルが少し違うよ！」と出して直せるようにした。直せば1回で正解と同じに扱う（主語の「惜しい！！」と合わせて1問3回まで）'] },
   { v: '1.21', d: '2026-11-04', items: ['正解したあとに、間違えた所を「入力した語（赤の二重線）→ 正しい語（緑）」で表示するようにした'] },
@@ -310,6 +311,18 @@ function toItems(rows) {
 const plain = en => en.replace(/\[([^\]]+)\]/g, '$1');
 // 見出し語の読み上げ用: "assure A (that) ~" の記号や "fair 1" の番号を除く
 const spoken = w => w.replace(/\.\.\.|…|~|[()]/g, ' ').replace(/\s\d+$/, '').trim();
+// 単語カードの入力用: 見出し語を、入力する語（b: true）と、そのまま見せる ( ) の中・... ・~・A / B・do ... などに分ける
+// "fair 1" の番号は除く。例: "remind A of B" → [remind] A [of] B、"be eager to do ..." → [be] [eager] [to] do ...
+function wordToks(w) {
+  const parts = w.replace(/\s+\d+$/, '').replace(/…/g, '...').split(/(\([^)]*\)|\.\.\.|~|\s+)/).filter(x => x && !/^\s+$/.test(x));
+  return parts.map((t, k) => {
+    const next = parts[k + 1] || '';
+    const fixed = /^\(/.test(t) || t === '...' || t === '~' || /^[A-C]$/.test(t) || /^one(self|'s)$/.test(t) ||
+      (/^(do|doing)$/.test(t) && (next === '...' || next === '~'));
+    const [, pre, core, post] = t.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
+    return { t, pre, core, post, n: fixed ? '' : norm(t), b: !fixed };
+  });
+}
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const marked = en => esc(en).replace(/\[([^\]]+)\]/g, '<mark>$1</mark>');
 
@@ -901,8 +914,10 @@ function startStudy(sec, m, daily) {
       prompt = `<div class="words">${esc(it.ja)}</div>`;
       answer = `<div class="en">${marked(it.en)}</div>${wordList(it)}`;
     } else {
-      prompt = `<div class="prompt en" style="font-size:28px;font-weight:700;text-align:center">${esc(c.w.w)}</div>`;
-      answer = `<div style="font-size:22px;font-weight:600;text-align:center">${esc(c.w.m || '（意味未登録）')}</div>
+      // 日本語の意味を見て、見出し語を入力する（2語以上なら語の数だけ入力欄を出す）
+      prompt = `<div class="prompt" style="font-size:20px;font-weight:600;text-align:center">${esc(c.w.m || '（意味未登録）')}</div>
+        ${c.w.m ? '' : `<div class="words">${esc(it.ja)}</div>`}`;
+      answer = `<div class="en" style="font-size:28px;font-weight:700;text-align:center">${esc(c.w.w.replace(/\s+\d+$/, ''))}</div>
         <div class="words en">${marked(it.en)}</div><div class="words">${esc(it.ja)}</div>`;
     }
     app.innerHTML = `
@@ -910,7 +925,7 @@ function startStudy(sec, m, daily) {
         <div class="meta"><span>No.${esc(it.no)} · ${i + 1} / ${cards.length}</span>
           <span>${prog.weak[c.key] ? '<span class="flag">● 苦手</span>' : ''}</span></div>
         ${prompt}
-        ${m === 'sentence' || m === 'cloze' ? `<div class="typing" id="tap">
+        ${m !== 'listen' ? `<div class="typing" id="tap">
           <div class="typing" id="inputs">
             <div class="prompt en fill" id="fill" hidden></div>
             <textarea id="typed" class="en" placeholder="英文を入力" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
@@ -929,14 +944,17 @@ function startStudy(sec, m, daily) {
         <button id="say">🔊 英文</button>
         <button id="next">次へ ›</button>
       </div>`;
-    if (m === 'sentence' || m === 'cloze') typing(c, m === 'cloze');
+    if (m !== 'listen') typing(c, m !== 'sentence');
     else document.getElementById('card').onclick = reveal;
-    document.getElementById('say').onclick = () => { stopSpeak(); m === 'word' && !revealed ? speak(spoken(c.w.w)) : sayEn(it); };
+    // 単語カードは、答えの前に読み上げると答えがわかってしまうので、答えのあとだけ見出し語を読む
+    document.getElementById('say').onclick = () => {
+      stopSpeak();
+      if (m !== 'word') sayEn(it); else if (revealed) speak(spoken(c.w.w)); else toast('答えのあとで聞けます');
+    };
     document.getElementById('prev').onclick = () => go(-1);
     document.getElementById('next').onclick = () => go(1);
     document.getElementById('ok').onclick = () => { delete prog.weak[c.key]; mark(c); go(1); };
     document.getElementById('ng').onclick = () => { prog.weak[c.key] = true; mark(c); go(1); };
-    if (m === 'word' && settings.autoSpeak) speak(spoken(c.w.w));
   }
   function reveal() {
     if (revealed) return;
@@ -978,7 +996,7 @@ function startStudy(sec, m, daily) {
     const $ = id => document.getElementById(id);
     const tap = $('tap');
     let inBr = false;
-    const toks = c.it.en.split(/\s+/).filter(Boolean).map(raw => {
+    const toks = c.w ? wordToks(c.w.w) : c.it.en.split(/\s+/).filter(Boolean).map(raw => {
       const b = inBr || raw.includes('[');
       inBr = b && !raw.includes(']');
       const t = raw.replace(/[[\]]/g, '');
@@ -1088,6 +1106,7 @@ function startStudy(sec, m, daily) {
         ${lv ? `<div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>
         ${fixes()}<div class="nexthint">タップ（または Enter）で次へ ›</div>`;
       celebrate(lv, tap.querySelector('.excellent'));
+      if (c.w && settings.autoSpeak) { stopSpeak(); speak(spoken(c.w.w)); }
       $('ans').classList.remove('hidden');
       // 答えを見ていられるよう、自動では進まない。カードをタップするか Enter で次へ
       // （Submit を押したクリックや Enter がそのまま届かないよう、次の番で受け付ける）
@@ -1112,7 +1131,7 @@ function startStudy(sec, m, daily) {
       $('ans').classList.toggle('hidden', !revealed);
       [$('inputs'), $('submit')].forEach(el => { if (el) el.hidden = revealed; });
       $('giveup').textContent = revealed ? '答えを隠す' : '答えを見る';
-      if (revealed) { if (settings.autoSpeak) sayEn(c.it); }
+      if (revealed) { if (settings.autoSpeak) c.w ? speak(spoken(c.w.w)) : sayEn(c.it); }
       else ($('fill').hidden ? $('typed') : $('fill').querySelector('input')).focus();
     };
     $('typed').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
