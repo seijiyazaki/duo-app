@@ -162,6 +162,7 @@ code { font-size: 12px; background: var(--line); padding: 1px 4px; border-radius
 .fill { line-height: 2.2; }
 .fill input { font: inherit; border: 0; border-bottom: 2px solid var(--accent); background: transparent; color: var(--text); padding: 0 2px; outline: none; border-radius: 0; }
 .fill input.miss { border-bottom-color: var(--weak); }
+.fill input.typo { border-bottom-color: #f59e0b; background: rgba(245,158,11,.14); }
 .msg { font-size: 14px; color: var(--weak); }
 .msg:empty { display: none; }
 .msg .close { display: block; font-size: 24px; font-weight: 800; color: #f59e0b; margin-bottom: 4px; animation: pop .35s ease-out; }
@@ -231,8 +232,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.21'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.22'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.22', d: '2026-11-04', items: ['4文字以上の語で1文字だけつづりが違うときは、間違いにせず「スペルが少し違うよ！」と出して直せるようにした。直せば1回で正解と同じに扱う（主語の「惜しい！！」と合わせて1問3回まで）'] },
   { v: '1.21', d: '2026-11-04', items: ['正解したあとに、間違えた所を「入力した語（赤の二重線）→ 正しい語（緑）」で表示するようにした'] },
   { v: '1.20', d: '2026-11-04', items: ['正解したあと自動で次へ進まず、カードをタップするか Enter を押すまで答えを表示したままにした', '和訳→英文で主語（we / you など）だけが違うときは「惜しい！！」と出して直せるようにした。直せば1回で正解と同じに扱う（1問につき2回まで）'] },
   { v: '1.19', d: '2026-11-02', items: ['続けて1回で正解するほど表示が10段階で上がるようにした（Good → Nice! → … → Legendary!!）。2回目以降の正解や答えを見たときは OK で、連続は0に戻る', '正解したときに音を鳴らすようにした。レベルが上がると拍手、歓声、口笛が加わり、Lv.10 はスタンディングオベーションになる（設定で切り替え。マナーモードでも鳴る）', '正解の演出を付けた。レベルが上がると、拍手の手、紙吹雪、クラッカー、花火、トロフィーが出てくる（設定で切り替え）'] },
@@ -942,23 +944,32 @@ function startStudy(sec, m, daily) {
   }
   // 和訳→英文: 入力を採点し、間違えた語だけを穴埋めにして出し直す
   // 穴埋め（cloze）: [ ] の語を最初から空欄にして採点する
-  // 日本文に主語がないと we / you などがわからないので、主語だけの違いは「惜しい！！」で直させる
-  // 代名詞（所有格・目的格も）と、主語に合わせて変わる be / have / do と三単現の s の違いだけなら、違う代名詞の位置を返す
-  function subjectOnly(want, got) {
+  // 1文字だけのつづりの違い（1文字の入れ違い・抜け・余分・隣どうしの入れ替え）。短い語は別の語になりやすいので4文字以上だけ
+  function typo1(a, b) {
+    if (a === b || a.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+    let i = 0;
+    while (i < a.length && a[i] === b[i]) i++;
+    if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2));
+    return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+  }
+  // 間違いにせず直させる違いを探す。subj: 主語の違い（日本文に主語がないと we / you などがわからない）、typo: 1文字のつづりの違い
+  // 主語に合わせて変わる be / have / do と三単現の s の違いは主語の違いに含める。ほかの違いがあれば null
+  function nearMiss(want, got) {
     if (want.length !== got.length) return null;
     const P = new Set('i me my mine myself we us our ours ourselves you your yours yourself yourselves they them their theirs themselves he him his himself she her hers herself it its itself'.split(' '));
     const G = { am: 'be', is: 'be', are: 'be', was: 'bep', were: 'bep', "i'm": 'pbe', "we're": 'pbe', "you're": 'pbe', "they're": 'pbe', "he's": 'pbe', "she's": 'pbe', "it's": 'pbe',
       has: 'have', have: 'have', does: 'do', do: 'do', "doesn't": 'dont', "don't": 'dont', "isn't": 'aint', "aren't": 'aint', "wasn't": 'werent', "weren't": 'werent' };
-    const diffs = [];
+    const subj = [], typo = [];
     for (let k = 0; k < want.length; k++) {
       const a = want[k], b = got[k];
       if (a === b) continue;
-      if (P.has(a) && P.has(b)) { diffs.push(k); continue; }
+      if (P.has(a) && P.has(b)) { subj.push(k); continue; }
       if (G[a] && G[a] === G[b]) continue;
-      if (k > 0 && diffs.includes(k - 1) && a.replace(/e?s$/, '') === b.replace(/e?s$/, '')) continue; // He respects / We respect
+      if (k > 0 && subj.includes(k - 1) && a.replace(/e?s$/, '') === b.replace(/e?s$/, '')) continue; // He respects / We respect
+      if (typo1(a, b)) { typo.push(k); continue; }
       return null;
     }
-    return diffs.length ? diffs : null;
+    return subj.length || typo.length ? { subj, typo } : null;
   }
   function typing(c, cloze) {
     const $ = id => document.getElementById(id);
@@ -1023,20 +1034,33 @@ function startStudy(sec, m, daily) {
           tries = 0; $('msg').textContent = '余分な語が入っています'; return;
         }
         const raw = $('typed').value.split(/\s+/).filter(w => norm(w));
-        const diffs = close < 2 && subjectOnly(toks.filter(x => x.n).map(x => x.n), raw.map(norm));
-        if (diffs) { // 1回目の入力としてやり直せる（直せば1回で正解と同じに扱う）
+        const near = close < 3 && nearMiss(toks.filter(x => x.n).map(x => x.n), raw.map(norm));
+        if (near) { // 1回目の入力としてやり直せる（直せば1回で正解と同じに扱う）
           close++; tries = 0;
-          $('msg').innerHTML = `<b class="close">惜しい！！</b>主語が違います。${diffs.map(k => `「${esc(raw[k])}」`).join('')}を直して、もう一度 Submit してください。`;
+          const words = ks => ks.map(k => `「${esc(raw[k])}」`).join('');
+          $('msg').innerHTML = `<b class="close">${near.subj.length ? '惜しい！！' : 'スペルが少し違うよ！'}</b>` +
+            (near.subj.length ? `主語が違います。${words(near.subj)}を直してください。` : '') +
+            (near.typo.length ? `${words(near.typo)}のつづりが1文字違います。` : '') + '直して、もう一度 Submit してください。';
           $('typed').focus();
           return;
         }
       } else {
-        $('fill').querySelectorAll('input').forEach(el => {
+        const ins = [...$('fill').querySelectorAll('input')];
+        ins.forEach(el => {
           const k = +el.dataset.k;
           if (norm(el.value) === toks[k].n) ok[k] = true;
           else if (norm(el.value) && !wrong.has(k)) wrong.set(k, el.value.trim());
         });
         if (ok.every(Boolean)) return excellent();
+        // まだの空欄が全部1文字のつづり違いなら、回数に数えずに直させる
+        const left = ins.filter(el => !ok[el.dataset.k]);
+        if (close < 3 && left.every(el => typo1(toks[el.dataset.k].n, norm(el.value)))) {
+          close++; tries--;
+          ins.forEach(el => { el.classList.toggle('typo', left.includes(el)); el.classList.remove('miss'); });
+          $('msg').innerHTML = `<b class="close">スペルが少し違うよ！</b>黄色い下線の所のつづりが1文字違います。直して、もう一度 Submit してください。`;
+          left[0].focus();
+          return;
+        }
       }
       $('msg').textContent = cloze ? '赤い下線の所を直してください' : '下線の所を入力してください';
       showFill();
@@ -1057,7 +1081,7 @@ function startStudy(sec, m, daily) {
       const lv = Math.min(combo, 10);
       chime(lv);
       tap.innerHTML = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}">${LEVELS[lv]}
-        <small>${close && lv ? '惜しい！から正解 · ' : ''}${lv ? `${combo}問連続で正解 · Lv.${lv}` : peeked ? '答えを見て正解 · 連続は 0 から' : `${tries}回目で正解 · 連続は 0 から`}</small>
+        <small>${close && lv ? '直して正解 · ' : ''}${lv ? `${combo}問連続で正解 · Lv.${lv}` : peeked ? '答えを見て正解 · 連続は 0 から' : `${tries}回目で正解 · 連続は 0 から`}</small>
         ${lv ? `<div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>
         ${fixes()}<div class="nexthint">タップ（または Enter）で次へ ›</div>`;
       celebrate(lv, tap.querySelector('.excellent'));
