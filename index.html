@@ -234,8 +234,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.25'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.26'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.26', d: '2026-11-05', items: ['Section を終えたら、1回で正解した割合を出すようにした。割合は10段階で、100% は Lv.10（Legendary!!）、90%台は Lv.9、80%台は Lv.8 … になる。デイリータスクの穴埋め・和訳→英文と、自由学習の各モードで出る', '答えを見た問題、2回目以降で正解した問題、答えずに次へ進んだ問題は、正解に数えない。途中でやめても、続きから再開すれば前の分も合わせて数える'] },
   { v: '1.25', d: '2026-11-05', items: ['単語カードで、品詞が2つ以上ある意味（lean の〔形〕やせた・〔動〕傾く など）を品詞ごとに改行して出すようにした。lean・fair・present など13語は、新しい取り込み用 CSV（duo_import_midasi_v2.csv）で両方の意味が入る'] },
   { v: '1.24', d: '2026-11-05', items: ['単語カードを入力・採点式にした。日本語の意味を見て見出し語を入力する。look at のように2語以上のものは語の数だけ入力欄を出す（A・B・... などはそのまま表示）', '単語カードも、続けて1回で正解すると10段階で上がる表示・音・演出が出る。1文字のつづり違いは「スペルが少し違うよ！」で直せる', '単語カードの 🔊 は、答えがわかってしまわないよう、答えのあとだけ見出し語を読む'] },
   { v: '1.23', d: '2026-11-04', items: ['パソコンのブラウザでブックマークやタブにアイコンが出るように favicon を付けた'] },
@@ -548,6 +549,12 @@ function celebrate(lv, anchor) {
 
 const LEVELS = ['OK', 'Good', 'Nice!', 'Great!', 'Super!', 'Awesome!', 'Excellent!', 'Fantastic!', 'Amazing!', 'Incredible!', 'Legendary!!'];
 let combo = 0; // 続けて1回で正解した数。学習を始めるたびに 0 に戻す
+// Section を終えたときの正解率の表示に音と演出を付ける
+function showRate(r) {
+  const el = document.getElementById('rate');
+  if (!r || !el) return;
+  chime(r.lv); celebrate(r.lv, el);
+}
 
 const stopSpeak = () => { listenRun = null; synth && synth.cancel(); player.pause(); };
 
@@ -748,20 +755,23 @@ function startDaily() {
     onPos: i => { sched.pos = i; saveSched(); },
     onDone: phaseDone
   });
-  function phaseDone() {
+  function phaseDone(r) {
+    const rate = r ? r.html : '';
     flushTime();
     const today = dayKey(), d = sched.done[key] || (sched.done[key] = {});
     d[sched.phase] = today;
     sched.pos = 0;
     if (sched.phase === 'cloze') {
       sched.phase = 'sentence'; saveSched();
-      return interlude('穴埋め完了！', `次は Section ${sec} の和訳→英文です。`, '▶ 和訳→英文へ進む', startDaily);
+      interlude('穴埋め完了！', `${rate}次は Section ${sec} の和訳→英文です。`, '▶ 和訳→英文へ進む', startDaily);
+      return showRate(r);
     }
     sched.phase = 'cloze'; sched.lastDay = today; sched.idx++;
     let msg = `今日の学習時間 ${hm((sched.log[today] || {}).t || 0)}`;
     if (sched.idx >= secs.length) { sched.cycle++; sched.idx = 0; msg += `<br>サイクル ${sched.cycle - 1} を終えました。サイクル ${sched.cycle} を始めます。`; }
     saveSched();
-    interlude(`Section ${sec} 完了`, msg, '📅 スケジュール表を見る', showSchedule);
+    interlude(`Section ${sec} 完了`, rate + msg, '📅 スケジュール表を見る', showSchedule);
+    showRate(r);
   }
 }
 function interlude(head, msg, label, next) {
@@ -901,6 +911,11 @@ function startStudy(sec, m, daily) {
   const keepPos = !daily && sec !== 'weak' && !settings.shuffle; // シャッフル中は毎回最初から
   let i = Math.min(daily ? daily.pos : keepPos ? prog.pos[posKey] || 0 : 0, cards.length - 1);
   let revealed = false;
+  // 正解の記録: 問題ごとに最初の結果（1回で正解=1、それ以外=0）。途中でやめても続きから数えられるよう保存する
+  const scoreKey = daily ? `d:${daily.key}:${m}` : posKey;
+  prog.score = prog.score || {};
+  if (i === 0 || !prog.score[scoreKey]) prog.score[scoreKey] = {};
+  const score = prog.score[scoreKey];
 
   function render() {
     const c = cards[i], it = c.it;
@@ -1100,6 +1115,7 @@ function startStudy(sec, m, daily) {
       mark(c);
       revealed = true;
       combo = tries === 1 && !peeked ? combo + 1 : 0;
+      if (!(c.key in score)) { score[c.key] = combo ? 1 : 0; saveProg(); }
       const lv = Math.min(combo, 10);
       chime(lv);
       tap.innerHTML = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}">${LEVELS[lv]}
@@ -1144,19 +1160,30 @@ function startStudy(sec, m, daily) {
     const n = i + d;
     if (n >= cards.length) {
       if (keepPos) { prog.pos[posKey] = 0; saveProg(); }
-      daily ? daily.onDone() : finish(); return;
+      daily ? daily.onDone(result()) : finish(); return;
     }
     i = Math.max(0, n);
     if (keepPos) { prog.pos[posKey] = i; saveProg(); }
     if (daily) daily.onPos(i);
     render(); window.scrollTo(0, 0);
   }
+  // 正解の割合を10段階で表す（100% は Lv.10、90〜99% は Lv.9 … 10% 未満は Lv.0）
+  function result() {
+    const n = cards.length, ok = cards.filter(c => score[c.key] === 1).length;
+    const lv = Math.floor(ok * 10 / n), pct = Math.round(ok * 100 / n);
+    const html = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}" id="rate">${lv ? LEVELS[lv] : 'もう少し！'}
+      <small>${n}問中 ${ok}問 1回で正解（${pct}%） · Lv.${lv}</small>
+      <div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div></div>`;
+    return { n, ok, lv, pct, html };
+  }
   function finish() {
+    const r = result();
     const weak = cards.filter(c => prog.weak[c.key]).length;
     const secs = sections();
     const nextSec = typeof sec === 'number' ? secs[secs.indexOf(sec) + 1] : null;
     app.innerHTML = `<div class="empty">
       <div style="font-size:20px;font-weight:700;color:var(--text)">おつかれさまでした</div>
+      ${r.html}
       ${cards.length}問のうち 苦手 ${weak}問<br><br>
       <div class="list">
         ${weak ? `<button class="row" id="again" style="justify-content:center">苦手だけもう一度</button>` : ''}
@@ -1166,8 +1193,11 @@ function startStudy(sec, m, daily) {
     const again = document.getElementById('again');
     if (again) again.onclick = () => {
       const left = cards.filter(c => prog.weak[c.key]);
-      cards.length = 0; cards.push(...left); i = 0; render();
+      cards.length = 0; cards.push(...left); i = 0;
+      for (const k in score) delete score[k];
+      saveProg(); render();
     };
+    showRate(r);
     const ns = document.getElementById('nextSec');
     if (ns) ns.onclick = () => startStudy(nextSec, m);
     document.getElementById('home').onclick = showFree;
