@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="DUO暗記">
 <meta name="theme-color" content="#1d3557">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>DUO暗記</title>
 <style>
@@ -232,8 +234,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.22'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.23'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.23', d: '2026-11-04', items: ['パソコンのブラウザでブックマークやタブにアイコンが出るように favicon を付けた'] },
   { v: '1.22', d: '2026-11-04', items: ['4文字以上の語で1文字だけつづりが違うときは、間違いにせず「スペルが少し違うよ！」と出して直せるようにした。直せば1回で正解と同じに扱う（主語の「惜しい！！」と合わせて1問3回まで）'] },
   { v: '1.21', d: '2026-11-04', items: ['正解したあとに、間違えた所を「入力した語（赤の二重線）→ 正しい語（緑）」で表示するようにした'] },
   { v: '1.20', d: '2026-11-04', items: ['正解したあと自動で次へ進まず、カードをタップするか Enter を押すまで答えを表示したままにした', '和訳→英文で主語（we / you など）だけが違うときは「惜しい！！」と出して直せるようにした。直せば1回で正解と同じに扱う（1問につき2回まで）'] },
