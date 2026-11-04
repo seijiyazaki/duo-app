@@ -234,8 +234,9 @@ let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
 const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
 
-const VERSION = '1.24'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.25'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.25', d: '2026-11-05', items: ['単語カードで、品詞が2つ以上ある意味（lean の〔形〕やせた・〔動〕傾く など）を品詞ごとに改行して出すようにした。lean・fair・present など13語は、新しい取り込み用 CSV（duo_import_midasi_v2.csv）で両方の意味が入る'] },
   { v: '1.24', d: '2026-11-05', items: ['単語カードを入力・採点式にした。日本語の意味を見て見出し語を入力する。look at のように2語以上のものは語の数だけ入力欄を出す（A・B・... などはそのまま表示）', '単語カードも、続けて1回で正解すると10段階で上がる表示・音・演出が出る。1文字のつづり違いは「スペルが少し違うよ！」で直せる', '単語カードの 🔊 は、答えがわかってしまわないよう、答えのあとだけ見出し語を読む'] },
   { v: '1.23', d: '2026-11-04', items: ['パソコンのブラウザでブックマークやタブにアイコンが出るように favicon を付けた'] },
   { v: '1.22', d: '2026-11-04', items: ['4文字以上の語で1文字だけつづりが違うときは、間違いにせず「スペルが少し違うよ！」と出して直せるようにした。直せば1回で正解と同じに扱う（主語の「惜しい！！」と合わせて1問3回まで）'] },
@@ -915,7 +916,7 @@ function startStudy(sec, m, daily) {
       answer = `<div class="en">${marked(it.en)}</div>${wordList(it)}`;
     } else {
       // 日本語の意味を見て、見出し語を入力する（2語以上なら語の数だけ入力欄を出す）
-      prompt = `<div class="prompt" style="font-size:20px;font-weight:600;text-align:center">${esc(c.w.m || '（意味未登録）')}</div>
+      prompt = `<div class="prompt" style="font-size:20px;font-weight:600;text-align:center">${c.w.m ? posLines(c.w.m) : '（意味未登録）'}</div>
         ${c.w.m ? '' : `<div class="words">${esc(it.ja)}</div>`}`;
       answer = `<div class="en" style="font-size:28px;font-weight:700;text-align:center">${esc(c.w.w.replace(/\s+\d+$/, ''))}</div>
         <div class="words en">${marked(it.en)}</div><div class="words">${esc(it.ja)}</div>`;
@@ -1174,6 +1175,8 @@ function startStudy(sec, m, daily) {
   render();
 }
 
+// 意味に品詞が2つ以上あるとき（lean: 〔形〕やせた 〔動〕傾く）は品詞ごとに改行する
+const posLines = m => esc(m).replace(/\s+(?=〔)/g, '<br>');
 function wordList(it) {
   if (!it.words.length) return '';
   return `<div class="words">${it.words.map(w => `<b class="en">${esc(w.w)}</b> ${esc(w.m)}`).join('<br>')}</div>`;
