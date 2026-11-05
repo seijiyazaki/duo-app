@@ -58,8 +58,8 @@ main > .note { background: var(--card); border-radius: 12px; padding: 10px 12px;
 .kicker { font-size: 12px; letter-spacing: .14em; font-weight: 700; opacity: .9; }
 .hero .big { font-size: 40px; font-weight: 800; margin: 6px 0 2px; letter-spacing: .01em; }
 .hero .sub { font-size: 14px; opacity: .92; }
-.steps { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: 14px; font-weight: 600; }
-.steps span { padding: 6px 12px; border-radius: 20px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); text-shadow: none; }
+.steps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 14px 0; font-size: 12px; font-weight: 600; }
+.steps span { padding: 5px 9px; border-radius: 20px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); text-shadow: none; }
 .steps span.now { background: #fff; color: #1b1f24; }
 .steps span.done { background: rgba(74,222,128,.35); border-color: rgba(74,222,128,.7); }
 .cbar { height: 6px; background: rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; margin: 10px 0 4px; }
@@ -229,13 +229,20 @@ const saveSettings = () => store.set('duo.settings', settings);
 // idx: 今のサイクルで取り組む Section の並び順（0 始まり）、phase: cloze（穴埋め）→ sentence（和訳→英文）、pos: その中の問題番号
 // log: 日付ごとの学習時間（秒）。s は「サイクル:Section」ごと・phase ごとの秒数
 // done: 「サイクル:Section」ごとに穴埋め・和訳→英文を終えた日
-const newSched = () => ({ cycle: 1, idx: 0, phase: 'cloze', pos: 0, lastDay: '', log: {}, done: {} });
+// left: 2周目以降に出す問題（1回で正解できなかった問題）。null なら全部、round: 何周目か
+const newSched = () => ({ cycle: 1, idx: 0, phase: 'listen', pos: 0, left: null, round: 1, lastDay: '', log: {}, done: {} });
 let sched = Object.assign(newSched(), store.get('duo.schedule', {}));
 const saveSched = () => store.set('duo.schedule', sched);
-const PHASES = { cloze: '穴埋め', sentence: '和訳→英文' };
+// デイリータスクの順番。単語・穴埋め・和訳→英文は、全部1回で正解できるまで間違えた問題を繰り返す
+const PHASES = { listen: '音声を聞く', word: '単語', cloze: '穴埋め', sentence: '和訳→英文' };
+const PH_ORDER = Object.keys(PHASES);
+const phaseCount = (sec, ph) => ph === 'listen' ? items.filter(i => i.section === sec).length : cardsFor(sec, ph).length;
+const leftCount = () => sched.left ? sched.left.length : phaseCount(curSec(), sched.phase);
+const roundTag = () => sched.left ? ` ${sched.round}周目` : '';
 
-const VERSION = '1.26'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
+const VERSION = '1.27'; // 公開するたびに 0.01 ずつ上げ、CHANGELOG の先頭に足す
 const CHANGELOG = [
+  { v: '1.27', d: '2026-11-05', items: ['デイリータスクを ①音声を聞く → ②単語 → ③穴埋め → ④和訳→英文 の4段階にした。デイリータスクを押すだけで順に進む', '単語・穴埋め・和訳→英文は、1回で正解できなかった問題（答えを見た・2回目以降で正解・答えずに次へ）を2周目、3周目…と繰り返し出し、全部1回で正解できたら次の段階へ進む', '音声を聞くは Section の例文を最後まで聞くと単語へ進む。聞き終えたことにして進むこともできる', 'デイリータスク中は「苦手」「覚えた」ボタンを出さないようにした'] },
   { v: '1.26', d: '2026-11-05', items: ['Section を終えたら、1回で正解した割合を出すようにした。割合は10段階で、100% は Lv.10（Legendary!!）、90%台は Lv.9、80%台は Lv.8 … になる。デイリータスクの穴埋め・和訳→英文と、自由学習の各モードで出る', '答えを見た問題、2回目以降で正解した問題、答えずに次へ進んだ問題は、正解に数えない。途中でやめても、続きから再開すれば前の分も合わせて数える'] },
   { v: '1.25', d: '2026-11-05', items: ['単語カードで、品詞が2つ以上ある意味（lean の〔形〕やせた・〔動〕傾く など）を品詞ごとに改行して出すようにした。lean・fair・present など13語は、新しい取り込み用 CSV（duo_import_midasi_v2.csv）で両方の意味が入る'] },
   { v: '1.24', d: '2026-11-05', items: ['単語カードを入力・採点式にした。日本語の意味を見て見出し語を入力する。look at のように2語以上のものは語の数だけ入力欄を出す（A・B・... などはそのまま表示）', '単語カードも、続けて1回で正解すると10段階で上がる表示・音・演出が出る。1文字のつづり違いは「スペルが少し違うよ！」で直せる', '単語カードの 🔊 は、答えがわかってしまわないよう、答えのあとだけ見出し語を読む'] },
@@ -708,9 +715,10 @@ function showHome() {
   }
   const secs = sections(), sec = curSec();
   const doneToday = sched.lastDay === dayKey();
-  const n = cardsFor(sec, sched.phase).length;
-  const started = sched.pos > 0 || sched.phase === 'sentence';
-  const step = k => sched.phase === k ? 'now' : (k === 'cloze' && sched.phase === 'sentence') ? 'done' : '';
+  const n = leftCount();
+  const pk = PH_ORDER.indexOf(sched.phase);
+  const started = sched.pos > 0 || pk > 0 || !!sched.left;
+  const step = k => k === sched.phase ? 'now' : PH_ORDER.indexOf(k) < pk ? 'done' : '';
   const finish = addDays(planStart(), secs.length - sched.idx - 1);
   // 直近7日の学習時間
   const week = [...Array(7)].map((_, k) => addDays(new Date(), k - 6));
@@ -724,10 +732,10 @@ function showHome() {
       <div class="sub">${doneToday ? '今日の Section は完了しました。次はこの Section です。' : `今日のタスク · ${cardsFor(sec, 'sentence').length}文`}</div>
       <div class="cbar"><i style="width:${sched.idx / secs.length * 100}%"></i></div>
       <div class="sub" style="font-size:12px">サイクル完了予定 ${mdw(finish)}</div>
-      <div class="steps"><span class="${step('cloze')}">① 穴埋め</span>›<span class="${step('sentence')}">② 和訳→英文</span></div>
+      <div class="steps">${PH_ORDER.map((k, j) => `<span class="${step(k)}">${'①②③④'[j]} ${PHASES[k].replace('音声を', '')}</span>`).join('›')}</div>
       <button class="cta ${doneToday ? 'done' : ''}" id="daily">${doneToday
         ? `✓ 今日のタスク完了<small>Section ${sec} を先取りする</small>`
-        : `▶ ${started ? '続きから' : 'デイリータスクを始める'}<small>${PHASES[sched.phase]} ${Math.min(sched.pos + 1, n)} / ${n} から</small>`}</button>
+        : `▶ ${started ? '続きから' : 'デイリータスクを始める'}<small>${PHASES[sched.phase]}${roundTag()} ${Math.min(sched.pos + 1, n)} / ${n} から</small>`}</button>
     </section>
     <div class="panel">
       <h2>今週の学習 <small>今日 ${hm(todayT)}</small></h2>
@@ -748,25 +756,37 @@ function showHome() {
 
 // ---------- デイリータスク ----------
 function startDaily() {
-  const secs = sections(), sec = curSec(), key = `${sched.cycle}:${sec}`;
-  if (!cardsFor(sec, sched.phase).length) { phaseDone(); return; } // 穴埋めのない Section は飛ばす
-  startStudy(sec, sched.phase, {
-    key, pos: sched.pos,
-    onPos: i => { sched.pos = i; saveSched(); },
-    onDone: phaseDone
-  });
-  function phaseDone(r) {
-    const rate = r ? r.html : '';
+  const secs = sections(), sec = curSec(), key = `${sched.cycle}:${sec}`, ph = sched.phase;
+  if (!phaseCount(sec, ph)) { nextPhase(); return; } // 単語や穴埋めのない Section は飛ばす
+  const opt = { key, pos: sched.pos, keys: sched.left, round: sched.round || 1,
+    onPos: i => { sched.pos = i; saveSched(); }, onDone: roundDone };
+  ph === 'listen' ? showListen(sec, opt) : startStudy(sec, ph, opt);
+  // 1周を終えたら、1回で正解できなかった問題だけをもう一度出す。全部1回で正解できたら次へ
+  function roundDone(r) {
     flushTime();
+    const miss = r && r.miss || [];
+    if (!miss.length) return nextPhase(r);
+    sched.left = miss; sched.round = (sched.round || 1) + 1; sched.pos = 0; saveSched();
+    interlude(`${PHASES[ph]} ${sched.round - 1}周目 終了`,
+      `${r.html}1回で正解できなかった ${miss.length}問を、もう一度出します。<br>全部1回で正解できたら次へ進めます。`,
+      `▶ ${sched.round}周目を始める（${miss.length}問）`, startDaily);
+    showRate(r);
+  }
+  function nextPhase(r) {
+    flushTime();
+    const rate = r ? r.html : '';
     const today = dayKey(), d = sched.done[key] || (sched.done[key] = {});
-    d[sched.phase] = today;
-    sched.pos = 0;
-    if (sched.phase === 'cloze') {
-      sched.phase = 'sentence'; saveSched();
-      interlude('穴埋め完了！', `${rate}次は Section ${sec} の和訳→英文です。`, '▶ 和訳→英文へ進む', startDaily);
+    d[ph] = today;
+    sched.pos = 0; sched.left = null; sched.round = 1;
+    const k = PH_ORDER.indexOf(ph);
+    if (k < PH_ORDER.length - 1) {
+      const nx = PH_ORDER[k + 1];
+      sched.phase = nx; saveSched();
+      if (!r) return startDaily();
+      interlude(`${PHASES[ph]} 完了！`, `${rate}次は Section ${sec} の${PHASES[nx]}です。`, `▶ ${PHASES[nx]}へ進む`, startDaily);
       return showRate(r);
     }
-    sched.phase = 'cloze'; sched.lastDay = today; sched.idx++;
+    sched.phase = PH_ORDER[0]; sched.lastDay = today; sched.idx++;
     let msg = `今日の学習時間 ${hm((sched.log[today] || {}).t || 0)}`;
     if (sched.idx >= secs.length) { sched.cycle++; sched.idx = 0; msg += `<br>サイクル ${sched.cycle - 1} を終えました。サイクル ${sched.cycle} を始めます。`; }
     saveSched();
@@ -818,7 +838,7 @@ function showSchedule() {
     const dates = Object.keys(sched.log).filter(d => sched.log[d].s[key]).sort();
     let st;
     if (dn.sentence) st = '<span class="ok">✓ 完了</span>';
-    else if (k === sched.idx) st = `<span class="now">${PHASES[sched.phase]} ${sched.pos + 1}/${cardsFor(s, sched.phase).length}</span>`;
+    else if (k === sched.idx) st = `<span class="now">${PHASES[sched.phase]}${roundTag()} ${sched.pos + 1}/${leftCount()}</span>`;
     else if (k < sched.idx) st = '<span class="plan">スキップ</span>';
     else st = `<span class="plan">予定 ${mdw(addDays(start, k - sched.idx))}</span>`;
     return `<tr class="${k === sched.idx ? 'cur' : ''}"><td>${k + 1}</td><td>S${s}</td>
@@ -856,12 +876,12 @@ function showSchedule() {
   $('pm').onclick = () => { calMonth = new Date(first.getFullYear(), first.getMonth() - 1, 1); showSchedule(); };
   $('nm').onclick = () => { calMonth = new Date(first.getFullYear(), first.getMonth() + 1, 1); showSchedule(); };
   $('jgo').onclick = () => {
-    sched.idx = +$('jsec').value; sched.phase = $('jph').value; sched.pos = 0; sched.lastDay = '';
+    sched.idx = +$('jsec').value; sched.phase = $('jph').value; sched.pos = 0; sched.left = null; sched.round = 1; sched.lastDay = '';
     saveSched(); toast(`Section ${curSec()} の${PHASES[sched.phase]}から始めます`); showSchedule();
   };
   $('jnew').onclick = () => {
     if (!confirm(`サイクル ${cyc + 1} を Section ${secs[0]} から始めます。よろしいですか？`)) return;
-    sched.cycle++; sched.idx = 0; sched.phase = 'cloze'; sched.pos = 0; sched.lastDay = '';
+    sched.cycle++; sched.idx = 0; sched.phase = PH_ORDER[0]; sched.pos = 0; sched.left = null; sched.round = 1; sched.lastDay = '';
     saveSched(); showSchedule();
   };
   const cur = app.querySelector('tr.cur'); // 表は今の Section が見える所から
@@ -903,8 +923,9 @@ function showFree() {
 // ---------- 学習 ----------
 // daily を渡すとデイリータスクとして出す（並びは固定、位置は sched に保存、終わったら daily.onDone）
 function startStudy(sec, m, daily) {
-  const cards = cardsFor(sec, m);
-  if (!cards.length) { toast('出題できる問題がありません'); return; }
+  let cards = cardsFor(sec, m);
+  if (daily && daily.keys) { const ks = new Set(daily.keys); cards = cards.filter(c => ks.has(c.key)); } // 2周目以降は間違えた問題だけ
+  if (!cards.length) { if (daily) return daily.onDone(null); toast('出題できる問題がありません'); return; }
   if (settings.shuffle && !daily) shuffle(cards);
   const posKey = `${m}:${sec}`;
   combo = 0;
@@ -920,7 +941,7 @@ function startStudy(sec, m, daily) {
   function render() {
     const c = cards[i], it = c.it;
     revealed = false;
-    const head = daily ? `今日のタスク · ${secName(sec)} · ${MODES[m]}` : `${secName(sec)} · ${MODES[m]}`;
+    const head = daily ? `今日のタスク · ${secName(sec)} · ${PHASES[m]}${daily.keys ? ` · ${daily.round}周目` : ''}` : `${secName(sec)} · ${MODES[m]}`;
     setHeader(head, daily ? showHome : showFree, daily ? 'daily' : 'free');
     let prompt, answer;
     if (m === 'sentence') {
@@ -951,10 +972,10 @@ function startStudy(sec, m, daily) {
         </div>` : '<div class="tapzone" id="tap">タップで答えを表示</div>'}
         <div class="answer hidden" id="ans">${answer}</div>
       </div>
-      <div class="actions">
+      ${daily ? '' : `<div class="actions">
         <button class="weak" id="ng">苦手</button>
         <button class="good" id="ok">覚えた</button>
-      </div>
+      </div>`}
       <div class="nav">
         <button id="prev" ${i === 0 ? 'disabled' : ''}>‹ 前へ</button>
         <button id="say">🔊 英文</button>
@@ -969,8 +990,10 @@ function startStudy(sec, m, daily) {
     };
     document.getElementById('prev').onclick = () => go(-1);
     document.getElementById('next').onclick = () => go(1);
-    document.getElementById('ok').onclick = () => { delete prog.weak[c.key]; mark(c); go(1); };
-    document.getElementById('ng').onclick = () => { prog.weak[c.key] = true; mark(c); go(1); };
+    if (!daily) {
+      document.getElementById('ok').onclick = () => { delete prog.weak[c.key]; mark(c); go(1); };
+      document.getElementById('ng').onclick = () => { prog.weak[c.key] = true; mark(c); go(1); };
+    }
   }
   function reveal() {
     if (revealed) return;
@@ -1174,7 +1197,8 @@ function startStudy(sec, m, daily) {
     const html = `<div class="excellent ${lv ? `lv${lv}` : 'miss'}" id="rate">${lv ? LEVELS[lv] : 'もう少し！'}
       <small>${n}問中 ${ok}問 1回で正解（${pct}%） · Lv.${lv}</small>
       <div class="lvbar">${[...Array(10)].map((_, k) => `<i class="${k < lv ? 'on' : ''}"></i>`).join('')}</div></div>`;
-    return { n, ok, lv, pct, html };
+    const miss = cards.filter(c => score[c.key] !== 1).map(c => c.key); // デイリータスクで次の周に出す問題
+    return { n, ok, lv, pct, html, miss };
   }
   function finish() {
     const r = result();
@@ -1214,18 +1238,23 @@ function wordList(it) {
 
 // ---------- 通し聞き ----------
 let listenRun = null;
-function showListen(sec) {
+// daily を渡すとデイリータスクの「音声を聞く」として出す（並びは固定、最後まで聞いたら daily.onDone）
+function showListen(sec, daily) {
   const its = sec === 'all' ? items.slice() : items.filter(i => i.section === sec);
-  if (settings.shuffle) shuffle(its);
-  setHeader(`${secName(sec)} · 通し聞き`, showFree, 'free');
+  if (settings.shuffle && !daily) shuffle(its);
+  setHeader(daily ? `今日のタスク · ${secName(sec)} · 音声を聞く` : `${secName(sec)} · 通し聞き`, daily ? showHome : showFree, daily ? 'daily' : 'free');
+  let k = daily ? Math.min(daily.pos, its.length - 1) : 0;
   app.innerHTML = `
-    <div class="card"><div class="meta"><span id="lpos">${its.length}文</span></div>
+    <div class="card" ${daily ? `id="card" data-daily="${daily.key}|listen"` : ''}><div class="meta"><span id="lpos">${daily && k ? `${k + 1} / ${its.length} から` : `${its.length}文`}</span></div>
       <div class="prompt" id="lja">再生ボタンを押すと、${settings.listenJa ? '和訳→' : ''}英文の順に読み上げます。</div>
       <div class="answer en" id="len"></div></div>
     <div class="tools" id="lrep" style="margin:14px 0 0">${[1, 2, 3].map(n =>
       `<button data-n="${n}" class="${n === settings.listenRepeat ? 'on' : ''}">${n}x</button>`).join('')}</div>
     <div class="nav"><button class="playbtn" id="play"></button></div>
-    <p class="note">ボタンを押すたびに再生と停止が切り替わります。1x〜3x は英文を読む回数です。2回目は1.25倍、3回目は1.5倍の速さで、間に3秒あけます。日本語の読み上げは設定で切り替えられます。</p>`;
+    <p class="note">ボタンを押すたびに再生と停止が切り替わります。1x〜3x は英文を読む回数です。2回目は1.25倍、3回目は1.5倍の速さで、間に3秒あけます。日本語の読み上げは設定で切り替えられます。</p>
+    ${daily ? `<p class="note">最後まで聞くと、単語の学習に進みます。</p><div class="list"><button id="lskip">聞き終えたことにして単語へ ›</button></div>` : ''}`;
+  const listened = () => { stopSpeak(); daily.onDone({ html: '', miss: [] }); };
+  if (daily) document.getElementById('lskip').onclick = listened;
   const btn = document.getElementById('play');
   const setPlaying = on => { btn.classList.toggle('on', on); btn.textContent = on ? '▶ 再生中' : '■ 停止中'; };
   setPlaying(false);
@@ -1238,15 +1267,17 @@ function showListen(sec) {
     stopSpeak();
     const run = listenRun = {};
     setPlaying(true);
-    let k = 0;
+    if (!daily) k = 0; // 自由学習の通し聞きは毎回最初から。デイリータスクは止めた所から
     // iPhone は最初の MP3 再生をボタン操作の中で行わないと、あとの再生を止める。和訳を読み上げ機能で読むときは無音で一度鳴らしておく
-    const first = audioUrls.get(parseInt(its[0].no, 10));
-    if (first && settings.listenJa && !audioUrls.get(`ja:${parseInt(its[0].no, 10)}`)) {
+    const first = audioUrls.get(parseInt(its[k].no, 10));
+    if (first && settings.listenJa && !audioUrls.get(`ja:${parseInt(its[k].no, 10)}`)) {
       player.src = first; player.muted = true;
       player.play().then(() => player.pause()).catch(() => {}).finally(() => { player.muted = false; });
     }
     const step = () => {
-      if (listenRun !== run || k >= its.length) { if (listenRun === run) { listenRun = null; setPlaying(false); } return; }
+      if (listenRun !== run) return;
+      if (k >= its.length) { listenRun = null; setPlaying(false); if (daily) listened(); else k = 0; return; }
+      if (daily) daily.onPos(k);
       const it = its[k];
       document.getElementById('lpos').textContent = `No.${it.no} · ${k + 1} / ${its.length}`;
       document.getElementById('lja').textContent = it.ja;
